@@ -1,26 +1,294 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+ * Tailwind v3 parity: v4 wraps `hover:` in `@media (hover: hover)`, which changes
+ * behaviour on touch devices. Keep the original semantics.
+ */
+@custom-variant hover (&:hover);
+
+@theme {
+  --font-sans: var(--font-geist-sans), Inter, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+
+  /*
+   * Tailwind v3 type scale. v4 uses unitless line-height ratios, which children with a
+   * different (arbitrary) font size inherit differently; absolute values keep v3 layout.
+   */
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl: 1.875rem;
+  --text-3xl--line-height: 2.25rem;
+  --text-4xl: 2.25rem;
+  --text-4xl--line-height: 2.5rem;
+  --text-5xl: 3rem;
+  --text-5xl--line-height: 1;
+  --text-6xl: 3.75rem;
+  --text-6xl--line-height: 1;
+  --text-7xl: 4.5rem;
+  --text-7xl--line-height: 1;
+
+  --color-ink-950: #070a12;
+  --color-ink-900: #0b0f1a;
+  --color-ink-850: #0f1422;
+  --color-ink-800: #141a2a;
+  --color-ink-700: #1c2436;
+  --color-ink-600: #263045;
+  --color-ink-500: #36415a;
+  --color-ink-400: #66718a;
+  --color-ink-300: #97a1b6;
+  --color-ink-200: #c3cad8;
+  --color-ink-100: #ebeff6;
+
+  --color-brand-50: #eef4ff;
+  --color-brand-100: #dce7ff;
+  --color-brand-200: #b6cdff;
+  --color-brand-300: #86aaff;
+  --color-brand-400: #5384ff;
+  --color-brand-500: #2563ff;
+  --color-brand-600: #0f4ae6;
+  --color-brand-700: #00369a;
+  --color-brand-800: #002a78;
+  --color-brand-900: #001a4d;
+
+  --color-azure-300: #7dd8ff;
+  --color-azure-400: #3fc2fa;
+  --color-azure-500: #12a8f0;
+  --color-azure-600: #0587cc;
+  --color-azure-700: #066aa2;
+
+  --color-aqua-300: #8af0e4;
+  --color-aqua-400: #4fe3d3;
+  --color-aqua-500: #22ccbb;
+  --color-aqua-600: #12a698;
+  --color-aqua-700: #0f837a;
+
+  --color-success-400: #4ade80;
+  --color-success-500: #22c55e;
+  --color-success-600: #16a34a;
+  --color-warning-400: #facc15;
+  --color-warning-500: #eab308;
+  --color-warning-600: #ca8a04;
+  --color-danger-400: #f87171;
+  --color-danger-500: #ef4444;
+  --color-danger-600: #dc2626;
+
+  --animate-fade-up: fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-marquee: marquee 30s linear infinite;
+  --animate-dash: dash 1.2s linear infinite;
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-fade-in: fade-in 0.3s ease both;
+  --animate-scale-in: scale-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-slide-in-right: slide-in-right 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-glow: glow 4s ease-in-out infinite;
+  --animate-shimmer: shimmer 1.4s linear infinite;
+  --animate-spin-slow: spin-slow 12s linear infinite;
 }
 
+/*
+ * Semantic tokens for shadcn/ui. Components added with `npx shadcn add` pick up
+ * the DIGITALYCloud palette instead of the default neutral theme.
+ */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--color-ink-950);
+  --color-foreground: var(--color-ink-100);
+  --color-card: var(--color-ink-900);
+  --color-card-foreground: var(--color-ink-100);
+  --color-popover: var(--color-ink-850);
+  --color-popover-foreground: var(--color-ink-100);
+  --color-primary: var(--color-brand-500);
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #ffffff;
+  --color-secondary-foreground: var(--color-ink-950);
+  --color-muted: var(--color-ink-800);
+  --color-muted-foreground: var(--color-ink-400);
+  --color-accent: var(--color-ink-800);
+  --color-accent-foreground: var(--color-ink-100);
+  --color-destructive: var(--color-danger-500);
+  --color-border: rgb(255 255 255 / 0.08);
+  --color-input: rgb(255 255 255 / 0.1);
+  --color-ring: var(--color-brand-500);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* Declared outside @theme so they are always emitted (some are referenced from plain CSS). */
+@keyframes fade-up {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes fade-in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes scale-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes slide-in-right {
+  0% {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes glow {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+@keyframes shimmer {
+  0% {
+    background-position: -400px 0;
+  }
+  100% {
+    background-position: 400px 0;
+  }
+}
+@keyframes spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes dash {
+  to {
+    stroke-dashoffset: -7;
+  }
+}
+@keyframes marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@utility bg-brand-gradient {
+  background-image: linear-gradient(135deg, #1a55f0 0%, #0a8ad4 100%);
+}
+@utility bg-brand-text {
+  background-image: linear-gradient(120deg, #5384ff 0%, #3fc2fa 60%, #4fe3d3 100%);
+}
+@utility bg-brand-gradient-3 {
+  background-image: linear-gradient(135deg, #00369a 0%, #2563ff 40%, #12a8f0 75%, #4fe3d3 100%);
+}
+
+@layer base {
+  /* Tailwind v3 preflight parity. */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: #e5e7eb;
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: #9ca3af;
+  }
+  button,
+  [role='button'] {
+    cursor: pointer;
+  }
+  :disabled {
+    cursor: default;
+  }
+
+  html {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-ink-950 font-sans text-ink-100 antialiased;
+    line-height: 1.5;
+    font-feature-settings:
+      'ss01',
+      'cv11';
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+  }
+  ::selection {
+    background: rgba(37, 99, 255, 0.4);
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #263045 transparent;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-white/[0.07] bg-ink-900/80;
+  }
+  .card-hover {
+    @apply transition-all duration-200 hover:border-white/[0.14] hover:bg-ink-850;
+  }
+  .glass {
+    @apply border border-white/[0.08] bg-white/[0.03] backdrop-blur-xl;
+  }
+  .text-gradient {
+    @apply bg-brand-text bg-clip-text text-transparent;
+  }
+  .input {
+    @apply w-full rounded-xl border border-white/10 bg-ink-900 px-3.5 py-2.5 text-sm text-ink-100 outline-hidden transition placeholder:text-ink-400 focus:border-brand-500/70 focus:ring-4 focus:ring-brand-500/15;
+  }
+  .label {
+    @apply mb-1.5 block text-xs font-medium text-ink-300;
+  }
+  .grid-bg {
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+  .skeleton {
+    @apply rounded-lg bg-ink-800;
+    background-image: linear-gradient(90deg, #141a2a 0px, #1c2436 40px, #141a2a 80px);
+    background-size: 800px 100%;
+    animation: shimmer 1.4s linear infinite;
+  }
 }
