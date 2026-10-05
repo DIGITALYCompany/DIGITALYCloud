@@ -7,7 +7,10 @@ import { Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
+import { errorMessage } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { safeRedirectPath } from '@/lib/validation';
+import type { Route } from 'next';
 import { Divider, FormError, GoogleButton } from './auth-form-parts';
 
 /** 0–4: length, mixed case, digit, symbol. */
@@ -20,7 +23,10 @@ function strength(pw: string) {
   return s;
 }
 
-const PERKS = ['Free plan, no credit card required', '1 service with 512 MB RAM included', 'Hosted in France'];
+const PERKS = ['Free plan, no credit card required', 'Free plans for bots, apps, APIs and workers', 'Hosted in France'];
+
+/** Back to the page that sent the visitor here (e.g. an invitation link), else the dashboard. */
+const redirectTarget = () => safeRedirectPath(new URLSearchParams(window.location.search).get('from'), '/dashboard') as Route;
 
 export function SignupForm() {
   const { signup, loginWithGoogle } = useAuth();
@@ -41,10 +47,10 @@ export function SignupForm() {
     setBusy(true);
     try {
       await signup(name, email, password);
-      toast({ kind: 'success', title: 'Account created', description: 'Welcome to DIGITALYCloud.' });
-      router.replace('/dashboard');
+      toast({ kind: 'success', title: 'Account created', description: `We sent a confirmation link to ${email.trim()}.` });
+      router.replace(redirectTarget());
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sign up failed.');
+      setError(errorMessage(err, 'Sign up failed.'));
     } finally {
       setBusy(false);
     }
@@ -60,12 +66,7 @@ export function SignupForm() {
         </Link>
       </p>
       <div className="mt-8">
-        <GoogleButton
-          onClick={async () => {
-            await loginWithGoogle();
-            router.push('/dashboard');
-          }}
-        />
+        <GoogleButton onClick={() => loginWithGoogle(redirectTarget())} />
       </div>
       <Divider>or sign up with email</Divider>
       <form onSubmit={submit} className="space-y-4">

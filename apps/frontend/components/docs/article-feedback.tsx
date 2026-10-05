@@ -3,11 +3,17 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { ThumbsDown, ThumbsUp } from 'lucide-react';
+import { api } from '@/lib/api';
 
 const BUTTON = 'inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-sm text-ink-200 transition hover:border-white/20 hover:bg-white/[0.04] hover:text-white';
 
-export function ArticleFeedback() {
-  const [vote, setVote] = useState<'up' | 'down' | null>(null);
+export function ArticleFeedback({ slug }: { slug: string }) {
+  const [vote, setVoteState] = useState<'up' | 'down' | null>(null);
+  // Fire and forget: the thank-you message doesn't depend on the request.
+  const setVote = (v: 'up' | 'down') => {
+    setVoteState(v);
+    api.support.docFeedback(slug, v).catch(() => {});
+  };
   if (vote) {
     return (
       <p className="animate-fade-in text-sm text-ink-300">

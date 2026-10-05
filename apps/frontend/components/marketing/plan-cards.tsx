@@ -6,7 +6,7 @@ import { PLAN_LEVELS } from '@/lib/catalog';
 import { cn } from '@/lib/utils';
 import { formatPrice } from './pricing';
 
-export function PlanCards({ plans }: { plans: ProductPlan[] }) {
+export function PlanCards({ plans, deployable = true }: { plans: ProductPlan[]; deployable?: boolean }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {plans.map((plan, i) => {
@@ -54,9 +54,15 @@ export function PlanCards({ plans }: { plans: ProductPlan[] }) {
                 {regions.length > 4 ? ` +${regions.length - 4}` : ''}
               </p>
             </div>
-            <ButtonLink href="/signup" variant={plan.popular ? 'primary' : 'outline'} className="mt-6 w-full">
-              {plan.price === 0 ? 'Start for free' : `Choose ${plan.name}`}
-            </ButtonLink>
+            {deployable ? (
+              <ButtonLink href="/signup" variant={plan.popular ? 'primary' : 'outline'} className="mt-6 w-full">
+                {plan.price === 0 ? 'Start for free' : `Choose ${plan.name}`}
+              </ButtonLink>
+            ) : (
+              <ButtonLink href="/contact" variant="outline" className="mt-6 w-full">
+                Coming soon · get notified
+              </ButtonLink>
+            )}
           </div>
         );
       })}

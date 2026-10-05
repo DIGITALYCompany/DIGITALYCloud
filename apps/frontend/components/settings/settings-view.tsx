@@ -2,20 +2,24 @@
 
 import { useState, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { AlertTriangle, Bell, KeyRound, Laptop, RotateCcw, Shield, Smartphone, Trash2, User, Users } from 'lucide-react';
+import { AlertTriangle, Bell, KeyRound, Shield, Trash2, User, Users } from 'lucide-react';
+import { DEFAULT_NOTIFICATION_PREFERENCES, type Language, type NotificationPreferences, type UpdateProfileInput } from '@digitalycloud/shared';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Panel } from '@/components/ui/card';
-import { ConfirmDialog } from '@/components/ui/modal';
+import { Modal } from '@/components/ui/modal';
 import { PageHeader } from '@/components/ui/page-header';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
+import { useApi } from '@/hooks/use-api';
 import { useAuth } from '@/providers/auth-provider';
-import { useCloud } from '@/providers/cloud-provider';
 import { useToast } from '@/providers/toast-provider';
+import { api, errorMessage } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { isValidEmail } from '@/lib/validation';
 import { ApiKeysPanel } from './api-keys-panel';
+import { SecurityTab } from './security-tab';
 import { TeamPanel } from './team-panel';
 
 const TABS = [
@@ -43,25 +47,73 @@ function Field({ label, htmlFor, children, hint }: { label: string; htmlFor?: st
   );
 }
 
+/** Common IANA zones; the user's current zone is always listed. Legacy UI values map to IANA names. */
+const COMMON_TIMEZONES = ['Europe/Paris', 'Europe/London', 'Europe/Berlin', 'Europe/Madrid', 'Europe/Amsterdam', 'Europe/Brussels', 'Europe/Zurich', 'America/Montreal', 'America/New_York', 'Asia/Singapore', 'Asia/Tokyo', 'Australia/Sydney', 'UTC'];
+const LEGACY_TIMEZONES: Record<string, string> = { paris: 'Europe/Paris', london: 'Europe/London' };
+const toIana = (tz: string) => LEGACY_TIMEZONES[tz] ?? tz;
+
+function offsetLabel(tz: string) {
+  try {
+    const part = new Intl.DateTimeFormat('en-GB', { timeZone: tz, timeZoneName: 'shortOffset' }).formatToParts(new Date()).find((p) => p.type === 'timeZoneName');
+    return part ? `${tz} (${part.value.replace('GMT', 'UTC')})` : tz;
+  } catch {
+    return tz;
+  }
+}
+
 function ProfileTab() {
   const { user, updateProfile } = useAuth();
   const toast = useToast();
   const [name, setName] = useState(user?.name ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
+  const [language, setLanguage] = useState<Language>(user?.language ?? 'en');
+  const [timezone, setTimezone] = useState(toIana(user?.timezone ?? 'Europe/Paris'));
+  const [currentPassword, setCurrentPassword] = useState('');
   const [busy, setBusy] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   if (!user) return null;
-  const dirty = name !== user.name || email !== user.email;
-  const valid = name.trim().length >= 2 && isValidEmail(email);
+  const emailChanged = email.trim().toLowerCase() !== user.email.toLowerCase();
+  const dirty = name !== user.name || emailChanged || language !== user.language || timezone !== user.timezone;
+  const valid = name.trim().length >= 2 && isValidEmail(email.trim()) && (!emailChanged || !user.hasPassword || currentPassword.length > 0);
+  const zones = COMMON_TIMEZONES.includes(timezone) ? COMMON_TIMEZONES : [timezone, ...COMMON_TIMEZONES];
 
   const save = async () => {
     setBusy(true);
+    setError(null);
     try {
-      await updateProfile({ name: name.trim(), email: email.trim() });
-      toast({ kind: 'success', title: 'Profile updated' });
-    } catch {
-      toast({ kind: 'error', title: 'Could not update profile' });
+      const patch: UpdateProfileInput = {};
+      if (name.trim() !== user.name) patch.name = name.trim();
+      if (language !== user.language) patch.language = language;
+      if (timezone !== user.timezone) patch.timezone = timezone;
+      if (emailChanged) {
+        patch.email = email.trim();
+        if (user.hasPassword) patch.currentPassword = currentPassword;
+      }
+      const updated = await updateProfile(patch);
+      setCurrentPassword('');
+      setEmail(updated.email);
+      toast(
+        emailChanged
+          ? { kind: 'info', title: 'Confirm your new email', description: `We sent a link to ${updated.pendingEmail ?? email.trim()}. Your sign-in email changes once you open it.` }
+          : { kind: 'success', title: 'Profile updated' }
+      );
+    } catch (e) {
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const resend = async () => {
+    setResending(true);
+    try {
+      await api.auth.resendVerification();
+      toast({ kind: 'success', title: 'Verification email sent' });
+    } catch (e) {
+      toast({ kind: 'error', title: 'Could not send the email', description: errorMessage(e) });
+    } finally {
+      setResending(false);
     }
   };
 
@@ -70,10 +122,29 @@ function ProfileTab() {
       <div className="mb-6 flex items-center gap-4">
         <Avatar initials={user.avatarInitials} size={56} />
         <div>
-          <p className="font-medium text-white">{user.name}</p>
+          <p className="flex items-center gap-2 font-medium text-white">
+            {user.name}
+            {user.emailVerified ? <Badge tone="success">Verified</Badge> : <Badge tone="warning">Email not verified</Badge>}
+          </p>
           <p className="text-sm text-ink-400">One DIGITALY account for Cloud and every other DIGITALY service.</p>
         </div>
       </div>
+      {(user.pendingEmail || !user.emailVerified) && (
+        <div className="mb-5 flex flex-col gap-3 rounded-xl border border-warning-500/25 bg-warning-500/[0.06] px-4 py-3 text-sm text-ink-200 sm:flex-row sm:items-center">
+          <span className="flex-1">
+            {user.pendingEmail ? (
+              <>
+                Waiting for you to confirm <span className="text-white">{user.pendingEmail}</span>. Until then you sign in with {user.email}.
+              </>
+            ) : (
+              'Confirm your email address to receive alerts and invoices.'
+            )}
+          </span>
+          <Button size="sm" variant="outline" loading={resending} onClick={resend}>
+            Resend link
+          </Button>
+        </div>
+      )}
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Full name" htmlFor="profile-name">
           <input id="profile-name" className="input" value={name} onChange={(e) => setName(e.target.value)} />
@@ -81,118 +152,34 @@ function ProfileTab() {
         <Field label="Email" htmlFor="profile-email" hint="Used for sign-in, invoices and alerts.">
           <input id="profile-email" className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </Field>
+        {emailChanged && user.hasPassword && (
+          <Field label="Current password" htmlFor="profile-password" hint="Required to change your sign-in email.">
+            <input id="profile-password" className="input" type="password" autoComplete="current-password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
+          </Field>
+        )}
         <Field label="Language" htmlFor="profile-language">
-          <select id="profile-language" className="input" defaultValue="en">
+          <select id="profile-language" className="input" value={language} onChange={(e) => setLanguage(e.target.value as Language)}>
             <option value="en">English</option>
             <option value="fr">Français</option>
           </select>
         </Field>
         <Field label="Timezone" htmlFor="profile-timezone">
-          <select id="profile-timezone" className="input" defaultValue="paris">
-            <option value="paris">Europe/Paris (UTC+2)</option>
-            <option value="london">Europe/London (UTC+1)</option>
+          <select id="profile-timezone" className="input" value={timezone} onChange={(e) => setTimezone(e.target.value)}>
+            {zones.map((z) => (
+              <option key={z} value={z}>
+                {offsetLabel(z)}
+              </option>
+            ))}
           </select>
         </Field>
       </div>
-      <div className="mt-6 flex justify-end">
+      <div className="mt-6 flex items-center justify-between gap-4">
+        <p className="text-xs text-danger-400">{error}</p>
         <Button onClick={save} loading={busy} disabled={!dirty || !valid}>
           Save changes
         </Button>
       </div>
     </Panel>
-  );
-}
-
-const SESSIONS = [
-  { id: 's1', device: 'MacBook Pro · Chrome', place: 'Lyon, France', current: true, icon: Laptop },
-  { id: 's2', device: 'iPhone 15 · Safari', place: 'Lyon, France', current: false, icon: Smartphone },
-  { id: 's3', device: 'Windows · Firefox', place: 'Paris, France', current: false, icon: Laptop },
-];
-
-function SecurityTab() {
-  const toast = useToast();
-  const [pw, setPw] = useState({ current: '', next: '', confirm: '' });
-  const [twoFa, setTwoFa] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [sessions, setSessions] = useState(SESSIONS);
-  const err = pw.next && pw.next.length < 8 ? 'At least 8 characters.' : pw.confirm && pw.confirm !== pw.next ? "Passwords don't match." : null;
-
-  const change = async () => {
-    setBusy(true);
-    // No backend yet: simulate the request round-trip.
-    await new Promise((r) => setTimeout(r, 700));
-    setBusy(false);
-    setPw({ current: '', next: '', confirm: '' });
-    toast({ kind: 'success', title: 'Password updated', description: 'Other sessions will need to sign in again.' });
-  };
-
-  return (
-    <div className="space-y-4">
-      <Panel title="Password" description="Use a long, unique password.">
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Field label="Current password" htmlFor="pw-current">
-            <input id="pw-current" className="input" type="password" value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} />
-          </Field>
-          <Field label="New password" htmlFor="pw-next">
-            <input id="pw-next" className="input" type="password" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} />
-          </Field>
-          <Field label="Confirm new password" htmlFor="pw-confirm">
-            <input id="pw-confirm" className="input" type="password" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} />
-          </Field>
-        </div>
-        <div className="mt-5 flex items-center justify-between gap-4">
-          <p className="text-xs text-danger-400">{err}</p>
-          <Button onClick={change} loading={busy} disabled={!pw.current || !pw.next || pw.next !== pw.confirm || !!err}>
-            Update password
-          </Button>
-        </div>
-      </Panel>
-
-      <Panel title="Two-factor authentication" description="Require a code from your authenticator app at sign-in.">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <Badge tone={twoFa ? 'success' : 'warning'}>{twoFa ? 'Enabled' : 'Disabled'}</Badge>
-            <span className="text-sm text-ink-300">Authenticator app</span>
-          </div>
-          <Switch
-            checked={twoFa}
-            onChange={(v) => {
-              setTwoFa(v);
-              toast({ kind: v ? 'success' : 'warning', title: v ? 'Two-factor enabled' : 'Two-factor disabled' });
-            }}
-            label="Two-factor authentication"
-          />
-        </div>
-      </Panel>
-
-      <Panel title="Active sessions" description="Devices currently signed in to your account." bodyClass="p-0">
-        <div className="divide-y divide-white/[0.05]">
-          {sessions.map((s) => (
-            <div key={s.id} className="flex items-center gap-3 px-5 py-3.5">
-              <s.icon className="h-5 w-5 text-ink-400" />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm text-white">{s.device}</p>
-                <p className="text-xs text-ink-500">{s.place}</p>
-              </div>
-              {s.current ? (
-                <Badge tone="success">This device</Badge>
-              ) : (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setSessions((l) => l.filter((x) => x.id !== s.id));
-                    toast({ kind: 'success', title: 'Session signed out' });
-                  }}
-                >
-                  Sign out
-                </Button>
-              )}
-            </div>
-          ))}
-        </div>
-      </Panel>
-    </div>
   );
 }
 
@@ -207,37 +194,103 @@ const NOTIFICATION_ROWS = [
 
 function NotificationsTab() {
   const toast = useToast();
-  const [prefs, setPrefs] = useState({ deploySuccess: false, deployFail: true, crash: true, usage: true, billing: true, product: false });
+  const prefs = useApi(() => api.account.preferences(), []);
+
+  const set = async (key: keyof NotificationPreferences, v: boolean) => {
+    const before = prefs.data;
+    prefs.setData((p) => ({ ...(p ?? DEFAULT_NOTIFICATION_PREFERENCES), [key]: v }));
+    try {
+      prefs.setData(await api.account.updatePreferences({ [key]: v }));
+      toast({ kind: 'success', title: 'Preferences saved' });
+    } catch (e) {
+      if (before) prefs.setData(before);
+      toast({ kind: 'error', title: 'Preferences not saved', description: errorMessage(e) });
+    }
+  };
+
   return (
     <Panel title="Email notifications" description="Choose what we email you about." bodyClass="p-0">
-      <div className="divide-y divide-white/[0.05]">
-        {NOTIFICATION_ROWS.map((r) => (
-          <div key={r.key} className="flex items-center justify-between gap-4 px-5 py-4">
-            <div>
-              <p className="text-sm text-white">{r.label}</p>
-              <p className="text-xs text-ink-400">{r.desc}</p>
+      {prefs.error && !prefs.data ? (
+        <p className="px-5 py-8 text-center text-sm text-danger-400">{prefs.error}</p>
+      ) : (
+        <div className="divide-y divide-white/[0.05]">
+          {NOTIFICATION_ROWS.map((r) => (
+            <div key={r.key} className="flex items-center justify-between gap-4 px-5 py-4">
+              <div>
+                <p className="text-sm text-white">{r.label}</p>
+                <p className="text-xs text-ink-400">{r.desc}</p>
+              </div>
+              {prefs.data ? <Switch checked={prefs.data[r.key]} onChange={(v) => set(r.key, v)} label={r.label} /> : <Skeleton className="h-6 w-11" />}
             </div>
-            <Switch
-              checked={prefs[r.key]}
-              onChange={(v) => {
-                setPrefs((p) => ({ ...p, [r.key]: v }));
-                toast({ kind: 'success', title: 'Preferences saved' });
-              }}
-              label={r.label}
-            />
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </Panel>
   );
 }
 
-function DangerTab() {
+function DeleteAccountDialog({ onClose }: { onClose: () => void }) {
   const { user, logout } = useAuth();
-  const { resetDemo } = useCloud();
   const toast = useToast();
   const router = useRouter();
-  const [confirm, setConfirm] = useState<'reset' | 'delete' | null>(null);
+  const [typed, setTyped] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!user) return null;
+
+  const remove = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.account.deleteAccount({ confirmEmail: typed.trim(), ...(user.hasPassword ? { currentPassword: password } : {}) });
+      router.prefetch('/');
+      await logout().catch(() => {});
+      toast({ kind: 'info', title: 'Account scheduled for deletion', description: 'Your services are being stopped and your data removed. We’ll email you when it’s done.' });
+      router.push('/');
+    } catch (e) {
+      setError(errorMessage(e));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={busy ? () => {} : onClose}
+      size="sm"
+      title="Delete your account?"
+      description="All services in teams you own are stopped and deleted, subscriptions are canceled and your data is removed. Teams owned by others keep their data."
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button variant="danger" onClick={remove} loading={busy} disabled={typed.trim().toLowerCase() !== user.email.toLowerCase() || (user.hasPassword && !password)}>
+            Delete account
+          </Button>
+        </>
+      }
+    >
+      <label className="label" htmlFor="delete-email">
+        Type <span className="font-mono text-ink-100">{user.email}</span> to confirm
+      </label>
+      <input id="delete-email" className="input font-mono" value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus />
+      {user.hasPassword && (
+        <>
+          <label className="label mt-4" htmlFor="delete-password">
+            Current password
+          </label>
+          <input id="delete-password" className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        </>
+      )}
+      {error && <p className="mt-3 text-sm text-danger-400">{error}</p>}
+    </Modal>
+  );
+}
+
+function DangerTab() {
+  const [confirm, setConfirm] = useState(false);
 
   return (
     <div className="card border-danger-500/20">
@@ -248,51 +301,15 @@ function DangerTab() {
       <div className="divide-y divide-white/[0.05]">
         <div className="flex flex-col items-start justify-between gap-4 p-5 sm:flex-row sm:items-center">
           <div>
-            <p className="text-sm font-medium text-white">Reset demo data</p>
-            <p className="text-xs text-ink-400">Restore SyncBot, CommunityAPI and DiscordNotifier to their original state.</p>
-          </div>
-          <Button variant="outline" icon={<RotateCcw className="h-4 w-4" />} onClick={() => setConfirm('reset')}>
-            Reset data
-          </Button>
-        </div>
-        <div className="flex flex-col items-start justify-between gap-4 p-5 sm:flex-row sm:items-center">
-          <div>
             <p className="text-sm font-medium text-white">Delete account</p>
-            <p className="text-xs text-ink-400">Permanently stops all services and deletes your data.</p>
+            <p className="text-xs text-ink-400">Permanently stops all services you own and deletes your data.</p>
           </div>
-          <Button variant="danger" icon={<Trash2 className="h-4 w-4" />} onClick={() => setConfirm('delete')}>
+          <Button variant="danger" icon={<Trash2 className="h-4 w-4" />} onClick={() => setConfirm(true)}>
             Delete account
           </Button>
         </div>
       </div>
-
-      <ConfirmDialog
-        open={confirm === 'reset'}
-        onClose={() => setConfirm(null)}
-        tone="primary"
-        title="Reset demo data?"
-        description="All services, deployments and keys will return to their initial state."
-        confirmLabel="Reset"
-        onConfirm={async () => {
-          await resetDemo();
-          toast({ kind: 'success', title: 'Demo data restored' });
-        }}
-      />
-      <ConfirmDialog
-        open={confirm === 'delete'}
-        onClose={() => setConfirm(null)}
-        title="Delete your account?"
-        description="Every service will be stopped and all data removed within 24 hours."
-        confirmLabel="Delete account"
-        confirmText={user?.email ?? 'delete'}
-        onConfirm={async () => {
-          router.prefetch('/');
-          await resetDemo();
-          await logout();
-          toast({ kind: 'info', title: 'Account deleted', description: 'Sorry to see you go.' });
-          router.push('/');
-        }}
-      />
+      {confirm && <DeleteAccountDialog onClose={() => setConfirm(false)} />}
     </div>
   );
 }

@@ -124,7 +124,7 @@ client.login(process.env.DISCORD_TOKEN);`}
     minutes: 4,
     body: (
       <>
-        <P>DIGITALYCloud supports Node.js 18, 20 LTS and 22 LTS. We recommend the latest LTS for new projects.</P>
+        <P>DIGITALYCloud supports Node.js 24 LTS and 22 LTS. We recommend 24 LTS for new projects; Node.js 18 and 20 have reached end of life and can no longer be deployed.</P>
         <H2 id="version">Pin your Node version</H2>
         <P>Add an <C>engines</C> field so every deployment uses the same runtime as your machine.</P>
         <CodeBlock lang="json" title="package.json" code={`{\n  "engines": { "node": "22.x" },\n  "scripts": { "start": "node server.js" }\n}`} />

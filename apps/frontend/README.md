@@ -39,29 +39,28 @@ components/
   layout/          Site header/footer, dashboard shell, sidebar, menus, auth guard
   marketing/ docs/ status/ dashboard/ services/ settings/ billing/ …   Feature components
 config/            Site metadata and navigation (links are type-checked routes)
-data/              Static content: products, regions, docs articles, status, seed data
+data/              Static content: products, docs articles, changelog, legal (regions come from @digitalycloud/shared)
 hooks/             Client hooks (live series, logs stream, click outside…)
 lib/
   api/             Data access layer (see below)
   catalog.ts       Plans and service types
-  simulation.ts    Deterministic chart/log data for the demo
   utils.ts         cn()
 providers/         Auth, toast and cloud (services/deployments) React contexts
 ```
 
 Route files in `app/` are thin Server Components that export metadata and render a feature component. Interactive pieces are Client Components (`'use client'`); everything else is rendered on the server.
 
-## Connecting the backend
+## The backend connection
 
-All data goes through `lib/api` (`import { api } from '@/lib/api'`). Today it is a **browser-side simulation** persisted in `localStorage` (`lib/api/mock-api.ts`), with the same async API a real client would have.
+All data goes through `lib/api` (`import { api } from '@/lib/api'`): a typed client over `lib/api/http-client.ts`
+(session cookie, CSRF token, per-tab `X-Team-Id`, `ApiError` with the server's message). Real-time updates use one
+`/v1/events` EventSource per tab (`lib/api/events.ts`). DTO types, the plan/region catalog, validation messages and the
+role matrix come from `@digitalycloud/shared`.
 
-To connect the real backend:
-
-1. Implement the same `api` shape over HTTP (for example in `lib/api/http-api.ts`).
-2. Export it from `lib/api/index.ts` instead of the mock.
-3. Replace the client-side guard in `components/layout/require-auth.tsx` with cookie-based sessions (e.g. a `proxy.ts` redirect) once the backend issues them.
-
-Nothing in the UI depends on `localStorage` directly.
+- `NEXT_PUBLIC_API_URL` (default `http://localhost:4000/v1`) — see `.env.example`. Run the API from `apps/backend`.
+- `proxy.ts` redirects signed-out visitors away from dashboard routes (optimistic, cookie presence only); `RequireAuth`
+  handles expired sessions; the API authorizes every request.
+- There is no mock or demo mode.
 
 ## Conventions
 

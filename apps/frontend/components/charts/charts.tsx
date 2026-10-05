@@ -1,7 +1,12 @@
 'use client';
 
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import type { Point } from '@/lib/simulation';
+
+/** One chart row: `t` is the x label; a null value is a gap (no sample), never drawn as zero. */
+export interface Point {
+  t: string;
+  [key: string]: number | string | null;
+}
 
 export interface SeriesDef {
   key: string;

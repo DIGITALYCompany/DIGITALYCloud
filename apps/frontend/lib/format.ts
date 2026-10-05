@@ -59,3 +59,12 @@ export function greeting(date = new Date()) {
   if (h < 18) return 'Good afternoon';
   return 'Good evening';
 }
+
+/** Chart labels for metric buckets. */
+export const hourLabelOf = (ts: number) => `${String(new Date(ts).getHours()).padStart(2, '0')}:00`;
+export const dayLabelOf = (ts: number) => new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+/** "Sep 24"-style label for a day relative to today. */
+export function daysAgoLabel(daysAgo: number) {
+  return dayLabelOf(Date.now() - daysAgo * 86400_000);
+}

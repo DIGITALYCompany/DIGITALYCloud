@@ -10,6 +10,7 @@ import { LinkTabs } from '@/components/ui/link-tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ServiceIcon } from '@/components/services/service-icon';
 import { useServiceActions } from '@/components/services/use-service-actions';
+import { useAuth } from '@/providers/auth-provider';
 import { useCloud } from '@/providers/cloud-provider';
 import { useToast } from '@/providers/toast-provider';
 import { copyToClipboard } from '@/lib/browser';
@@ -28,6 +29,7 @@ export function useService() {
 /** Header, actions and tab bar shared by every page under /services/[id]. */
 export function ServiceShell({ id, children }: { id: string; children: ReactNode }) {
   const { services, loading } = useCloud();
+  const { can } = useAuth();
   const toast = useToast();
   const service = services.find((s) => s.id === id);
   const a = useServiceActions(service);
@@ -52,8 +54,9 @@ export function ServiceShell({ id, children }: { id: string; children: ReactNode
     );
 
   const base = `/services/${service.id}` as const;
-  const url = service.port ? `${service.id}.digitaly.app` : null;
-  const busyDeploying = service.status === 'deploying';
+  const url = service.url;
+  const busyDeploying = service.status === 'deploying' || service.operation?.kind === 'deploy';
+  const control = can('services.control');
 
   return (
     <>
@@ -77,12 +80,12 @@ export function ServiceShell({ id, children }: { id: string; children: ReactNode
                   <span className="text-ink-600">·</span>
                   <button
                     onClick={() => {
-                      copyToClipboard(`https://${url}`);
+                      copyToClipboard(url);
                       toast({ kind: 'info', title: 'URL copied to clipboard' });
                     }}
                     className="inline-flex items-center gap-1 font-mono text-xs text-brand-300 hover:text-brand-200"
                   >
-                    {url} <Copy className="h-3 w-3" />
+                    {url.replace(/^https?:\/\//, '')} <Copy className="h-3 w-3" />
                   </button>
                 </>
               )}
@@ -90,6 +93,8 @@ export function ServiceShell({ id, children }: { id: string; children: ReactNode
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          {control && (
+            <>
           <Button onClick={a.deploy} loading={a.busy === 'deploy' || busyDeploying} icon={<Rocket className="h-4 w-4" />}>
             {busyDeploying ? 'Deploying...' : 'Deploy'}
           </Button>
@@ -102,9 +107,11 @@ export function ServiceShell({ id, children }: { id: string; children: ReactNode
               <Button variant="outline" onClick={a.restart} disabled={busyDeploying} loading={a.busy === 'restart'} icon={<RotateCw className="h-4 w-4" />}>
                 Restart
               </Button>
-              <Button variant="outline" onClick={a.askStop} disabled={busyDeploying} icon={<Square className="h-4 w-4" />}>
+              <Button variant="outline" onClick={a.askStop} disabled={busyDeploying} loading={a.busy === 'stop'} icon={<Square className="h-4 w-4" />}>
                 Stop
               </Button>
+            </>
+          )}
             </>
           )}
           <ButtonLink href={`${base}/settings`} variant="ghost" icon={<Settings className="h-4 w-4" />}>

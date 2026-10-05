@@ -10,6 +10,4 @@ export const DOCS: DocArticle[] = [...GUIDE_DOCS, ...BEST_PRACTICE_DOCS, ...PLAT
 
 export const DOC_INDEX: DocMeta[] = DOCS.map(({ slug, title, section, summary, minutes, featured }) => ({ slug, title, section, summary, minutes, featured }));
 
-export const getDoc = (slug: string) => DOCS.find((d) => d.slug === slug);
-
 export { SECTION_META } from './sections';

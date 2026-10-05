@@ -1,0 +1,17 @@
+{
+  "name": "@digitalycloud/shared",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Browser-safe contracts shared by the DIGITALYCloud frontend and backend: enums, catalog, validation rules and API DTOs.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

@@ -54,6 +54,8 @@ export function ServiceRow({ service: s }: { service: Service }) {
   const router = useRouter();
   const { restart, start, deploy, askStop, busy, dialogs } = useServiceActions(s);
   const online = s.status === 'running';
+  // No sample yet (or the collector is behind): show a dash, not a measured zero.
+  const measured = online && s.metricsAt !== null;
   const ramPct = (s.ramMb / s.ramLimitMb) * 100;
 
   return (
@@ -89,16 +91,16 @@ export function ServiceRow({ service: s }: { service: Service }) {
         <span className="hidden md:block">
           <span className="flex justify-between font-mono text-xs text-ink-200">
             <span className="text-ink-500">CPU</span>
-            {online ? `${s.cpu.toFixed(1)}%` : '—'}
+            {measured ? `${s.cpu.toFixed(1)}%` : '—'}
           </span>
-          <MiniBar value={online ? s.cpu : 0} tone="bg-brand-500" />
+          <MiniBar value={measured ? s.cpu : 0} tone="bg-brand-500" />
         </span>
         <span className="hidden md:block">
           <span className="flex justify-between font-mono text-xs text-ink-200">
             <span className="text-ink-500">RAM</span>
-            {online ? formatMb(s.ramMb) : '—'}
+            {measured ? formatMb(s.ramMb) : '—'}
           </span>
-          <MiniBar value={online ? ramPct : 0} tone="bg-azure-500" />
+          <MiniBar value={measured ? ramPct : 0} tone="bg-azure-500" />
         </span>
         <span className="hidden justify-end md:flex">
           <ServiceStatusBadge status={s.status} />

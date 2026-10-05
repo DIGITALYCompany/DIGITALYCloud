@@ -1,56 +1,55 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Activity, AlertOctagon, Boxes, Cpu, Euro, Lock, MemoryStick, Rocket, Search, Server as ServerIcon, Users } from 'lucide-react';
 import { AreaSeriesChart, BarSeriesChart, CHART_COLORS } from '@/components/charts/charts';
 import { Badge, ServiceStatusBadge } from '@/components/ui/badge';
 import { ButtonLink } from '@/components/ui/button';
 import { Panel, StatCard } from '@/components/ui/card';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState, ErrorState } from '@/components/ui/empty-state';
+import { CardSkeleton, Skeleton } from '@/components/ui/skeleton';
 import { LogoMark } from '@/components/ui/logo';
 import { PageHeader } from '@/components/ui/page-header';
 import { useAuth } from '@/providers/auth-provider';
-import { ADMIN_TOP_SERVICES, SERVERS } from '@/data/seed';
-import { formatEuro, formatMb } from '@/lib/format';
-import { dayLabel, makeSeries } from '@/lib/simulation';
+import { useApi } from '@/hooks/use-api';
+import { api } from '@/lib/api';
+import { SERVICE_TYPES, getServicePlan } from '@/lib/catalog';
+import { dayLabelOf, formatEuro, formatMb } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import type { ServiceStatus } from '@/lib/types';
 
+/** Static directory of sister products (no live data is claimed for them). */
 const ECOSYSTEM = [
-  { name: 'DIGITALY Cloud', desc: 'Hosting', status: 'Operational', users: '2,481' },
-  { name: 'DIGITALY ID', desc: 'Accounts & SSO', status: 'Operational', users: '9,120' },
-  { name: 'DIGITALY Studio', desc: 'Web agency', status: 'Operational', users: '312' },
-  { name: 'DIGITALY Pay', desc: 'Billing engine', status: 'Operational', users: '—' },
+  { name: 'DIGITALY Cloud', desc: 'Hosting' },
+  { name: 'DIGITALY ID', desc: 'Accounts & SSO' },
+  { name: 'DIGITALY Studio', desc: 'Web agency' },
+  { name: 'DIGITALY Pay', desc: 'Billing engine' },
 ];
+
+const pctOrDash = (v: number | null, digits = 0) => (v === null ? '—' : `${v.toFixed(digits)}%`);
 
 const COLUMNS = ['Service', 'Owner', 'Type', 'Server', 'CPU', 'RAM', 'Plan', 'Status'];
 
 /** Internal platform dashboard, restricted to admins. */
 export function AdminView() {
   const { user } = useAuth();
+  const staff = user?.role === 'admin';
   const [q, setQ] = useState('');
-  const growth = useMemo(
-    () =>
-      makeSeries('admin-mrr', 30, { mrr: { base: 11200, spread: 900 }, users: { base: 2400, spread: 120 } }, dayLabel(30)).map((p, i) => ({
-        ...p,
-        mrr: Math.round(9800 + i * 92 + (p.mrr as number) * 0.05),
-        users: Math.round(2150 + i * 11),
-      })),
-    []
-  );
-  const deploys = useMemo(
-    () =>
-      makeSeries('admin-deploys', 14, { success: { base: 310, spread: 90 }, failed: { base: 14, spread: 8 } }, dayLabel(14)).map((p) => ({
-        ...p,
-        success: Math.round(p.success as number),
-        failed: Math.round(p.failed as number),
-      })),
-    []
-  );
-  const rows = ADMIN_TOP_SERVICES.filter((s) => `${s.name} ${s.owner} ${s.server}`.toLowerCase().includes(q.toLowerCase()));
+  const [search, setSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(q.trim()), 300);
+    return () => clearTimeout(t);
+  }, [q]);
 
-  if (user?.role !== 'admin') {
+  const overview = useApi(() => api.admin.overview(), [], { enabled: staff });
+  const revenue = useApi(() => api.admin.revenue('30d'), [], { enabled: staff });
+  const daily = useApi(() => api.admin.deploymentsDaily('14d'), [], { enabled: staff });
+  const top = useApi(() => api.admin.services(search || undefined), [search], { enabled: staff });
+  const growth = useMemo(() => (revenue.data ?? []).map((p) => ({ t: dayLabelOf(p.ts), mrr: p.mrr, users: p.users })), [revenue.data]);
+  const deploys = useMemo(() => (daily.data ?? []).map((p) => ({ t: dayLabelOf(p.ts), success: p.success, failed: p.failed })), [daily.data]);
+  const rows = top.data ?? [];
+
+  if (!staff) {
     return (
       <EmptyState
         icon={<Lock className="h-6 w-6" />}
@@ -60,10 +59,8 @@ export function AdminView() {
       />
     );
   }
-
-  const online = SERVERS.filter((s) => s.status === 'healthy');
-  const cpu = Math.round(online.reduce((a, s) => a + s.cpu, 0) / online.length);
-  const ram = Math.round(online.reduce((a, s) => a + s.ram, 0) / online.length);
+  if (overview.error && !overview.data) return <ErrorState message={overview.error} onRetry={overview.reload} />;
+  const o = overview.data;
 
   return (
     <>
@@ -82,21 +79,46 @@ export function AdminView() {
       />
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Total users" value="2,481" icon={<Users />} sub="+148 this month" accent />
-        <StatCard label="Active services" value="3,926" icon={<Boxes />} sub="94.2% running" />
-        <StatCard label="Servers online" value={`${online.length}/${SERVERS.length}`} icon={<ServerIcon />} sub="Lyon-02 in maintenance" />
-        <StatCard label="MRR" value={formatEuro(12_684)} icon={<Euro />} sub="+8.4% vs August" accent />
-        <StatCard label="CPU utilization" value={`${cpu}%`} icon={<Cpu />} sub="Fleet average" />
-        <StatCard label="RAM utilization" value={`${ram}%`} icon={<MemoryStick />} sub="Fleet average" />
-        <StatCard label="New deployments" value="4,312" icon={<Rocket />} sub="Last 14 days" />
-        <StatCard label="Failed deployments" value="187" icon={<AlertOctagon />} sub="4.3% failure rate" />
+        {!o ? (
+          Array.from({ length: 8 }).map((_, i) => <CardSkeleton key={i} rows={2} />)
+        ) : (
+          <>
+            <StatCard label="Total users" value={o.totalUsers.toLocaleString('en-US')} icon={<Users />} sub={`+${o.newUsersThisMonth.toLocaleString('en-US')} this month`} accent />
+            <StatCard label="Active services" value={o.activeServices.toLocaleString('en-US')} icon={<Boxes />} sub={o.runningPct === null ? 'No services yet' : `${o.runningPct.toFixed(1)}% running`} />
+            <StatCard
+              label="Servers online"
+              value={`${o.serversOnline}/${o.serversTotal}`}
+              icon={<ServerIcon />}
+              sub={o.serversInMaintenance.length ? `${o.serversInMaintenance.join(', ')} in maintenance` : 'None in maintenance'}
+            />
+            <StatCard label="MRR" value={formatEuro(o.mrr)} icon={<Euro />} sub={o.mrrChangePct === null ? 'No previous month to compare' : `${o.mrrChangePct >= 0 ? '+' : ''}${o.mrrChangePct.toFixed(1)}% vs last month`} accent />
+            <StatCard label="CPU utilization" value={pctOrDash(o.cpuAvg)} icon={<Cpu />} sub="Fleet average" />
+            <StatCard label="RAM utilization" value={pctOrDash(o.ramAvg)} icon={<MemoryStick />} sub="Fleet average" />
+            <StatCard label="New deployments" value={o.deployments14d.toLocaleString('en-US')} icon={<Rocket />} sub="Last 14 days" />
+            <StatCard
+              label="Failed deployments"
+              value={o.failedDeployments14d.toLocaleString('en-US')}
+              icon={<AlertOctagon />}
+              sub={`${pctOrDash(o.failureRatePct, 1)} failure rate${o.deadLetterTasks ? ` · ${o.deadLetterTasks} dead-letter tasks` : ''}${o.overdueAccountDeletions ? ` · ${o.overdueAccountDeletions} overdue deletions` : ''}`}
+            />
+          </>
+        )}
       </div>
 
       <div className="mb-6 grid gap-4 xl:grid-cols-3">
         <Panel title="Monthly recurring revenue" description="Last 30 days" className="xl:col-span-2" action={<Activity className="h-4 w-4 text-ink-400" />}>
-          <AreaSeriesChart data={growth} series={[{ key: 'mrr', name: 'MRR', color: CHART_COLORS.primary, unit: ' €' }]} />
+          {revenue.loading && !revenue.data ? (
+            <Skeleton className="h-[240px] w-full" />
+          ) : growth.length === 0 ? (
+            <div className="flex h-[240px] items-center justify-center text-sm text-ink-400">No revenue snapshots yet. The worker records one per day.</div>
+          ) : (
+            <AreaSeriesChart data={growth} series={[{ key: 'mrr', name: 'MRR', color: CHART_COLORS.primary, unit: ' €' }]} />
+          )}
         </Panel>
         <Panel title="Deployments" description="Last 14 days">
+          {daily.loading && !daily.data ? (
+            <Skeleton className="h-[220px] w-full" />
+          ) : (
           <BarSeriesChart
             data={deploys}
             stacked
@@ -105,6 +127,7 @@ export function AdminView() {
               { key: 'failed', name: 'Failed', color: CHART_COLORS.accent },
             ]}
           />
+          )}
         </Panel>
       </div>
 
@@ -120,8 +143,16 @@ export function AdminView() {
           </div>
         }
       >
-        {rows.length === 0 ? (
-          <p className="px-5 py-10 text-center text-sm text-ink-400">No services match &quot;{q}&quot;.</p>
+        {top.loading && !top.data ? (
+          <div className="space-y-3 p-5">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-10 w-full" />
+            ))}
+          </div>
+        ) : top.error ? (
+          <p className="px-5 py-10 text-center text-sm text-danger-400">{top.error}</p>
+        ) : rows.length === 0 ? (
+          <p className="px-5 py-10 text-center text-sm text-ink-400">{search ? <>No services match &quot;{search}&quot;.</> : 'No services yet.'}</p>
         ) : (
           <>
             <table className="hidden w-full text-sm md:table">
@@ -136,18 +167,18 @@ export function AdminView() {
               </thead>
               <tbody className="divide-y divide-white/[0.05]">
                 {rows.map((s) => (
-                  <tr key={s.name} className="transition hover:bg-white/[0.02]">
+                  <tr key={s.id} className="transition hover:bg-white/[0.02]">
                     <td className="px-5 py-3.5 font-medium text-white">{s.name}</td>
                     <td className="px-5 py-3.5 text-ink-300">{s.owner}</td>
-                    <td className="px-5 py-3.5 text-ink-300">{s.type}</td>
+                    <td className="px-5 py-3.5 text-ink-300">{SERVICE_TYPES[s.type].label}</td>
                     <td className="px-5 py-3.5 font-mono text-ink-300">{s.server}</td>
-                    <td className="px-5 py-3.5 font-mono text-white">{s.cpu}%</td>
-                    <td className="px-5 py-3.5 font-mono text-white">{formatMb(s.ram)}</td>
+                    <td className="px-5 py-3.5 font-mono text-white">{s.cpu.toFixed(1)}%</td>
+                    <td className="px-5 py-3.5 font-mono text-white">{formatMb(s.ramMb)}</td>
                     <td className="px-5 py-3.5">
-                      <Badge>{s.plan}</Badge>
+                      <Badge>{getServicePlan(s.type, s.plan).name}</Badge>
                     </td>
                     <td className="px-5 py-3.5">
-                      <ServiceStatusBadge status={s.status as ServiceStatus} />
+                      <ServiceStatusBadge status={s.status} />
                     </td>
                   </tr>
                 ))}
@@ -155,16 +186,16 @@ export function AdminView() {
             </table>
             <div className="divide-y divide-white/[0.05] md:hidden">
               {rows.map((s) => (
-                <div key={s.name} className="px-5 py-4">
+                <div key={s.id} className="px-5 py-4">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-medium text-white">{s.name}</span>
-                    <ServiceStatusBadge status={s.status as ServiceStatus} />
+                    <ServiceStatusBadge status={s.status} />
                   </div>
                   <p className="mt-1 text-xs text-ink-400">
-                    {s.owner} · {s.type} · {s.plan}
+                    {s.owner} · {SERVICE_TYPES[s.type].label} · {getServicePlan(s.type, s.plan).name}
                   </p>
                   <p className="mt-2 font-mono text-xs text-ink-300">
-                    {s.server} · CPU {s.cpu}% · {formatMb(s.ram)}
+                    {s.server} · CPU {s.cpu.toFixed(1)}% · {formatMb(s.ramMb)}
                   </p>
                 </div>
               ))}
@@ -183,10 +214,6 @@ export function AdminView() {
                   <p className="text-sm font-medium text-white">{e.name}</p>
                   <p className="text-xs text-ink-500">{e.desc}</p>
                 </div>
-              </div>
-              <div className="mt-4 flex items-center justify-between text-xs">
-                <span className="text-success-400">{e.status}</span>
-                <span className="font-mono text-ink-400">{e.users} users</span>
               </div>
             </div>
           ))}

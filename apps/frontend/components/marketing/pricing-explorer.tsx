@@ -48,7 +48,7 @@ export function PricingExplorer() {
             Learn more about {product.name} <ArrowRight className="h-3.5 w-3.5" />
           </Link>
         </div>
-        <PlanCards plans={product.plans} />
+        <PlanCards plans={product.plans} deployable={product.deployable} />
       </div>
 
       <div className="mt-20">

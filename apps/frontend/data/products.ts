@@ -40,6 +40,8 @@ export interface Product {
   icon: LucideIcon;
   category: 'Bots & Apps' | 'Gaming' | 'Web';
   badge?: string;
+  /** False for products the platform can't deploy yet: their pages are informational only. */
+  deployable: boolean;
   accent: { text: string; bg: string; ring: string; hex: string };
   headline: [string, string];
   description: string;
@@ -95,6 +97,7 @@ const WEB_PLANS: ProductPlan[] = [
 export const PRODUCTS: Product[] = [
   {
     slug: 'discord-bots',
+    deployable: true,
     name: 'Discord Bot Hosting',
     short: 'Keep your bot online 24/7',
     icon: Bot,
@@ -139,11 +142,12 @@ client.login(process.env.DISCORD_TOKEN);`,
   },
   {
     slug: 'game-servers',
+    deployable: false,
     name: 'Game Servers',
     short: 'Minecraft, FiveM, Rust and more',
     icon: Gamepad2,
     category: 'Gaming',
-    badge: 'New',
+    badge: 'Coming soon',
     accent: accent,
     headline: ['Game servers', 'without the lag.'],
     description: 'Launch Minecraft, FiveM, Rust, Palworld or Valheim servers on high-frequency CPUs with NVMe storage and built-in DDoS protection, hosted in France.',
@@ -187,6 +191,7 @@ enable-command-block=false
   },
   {
     slug: 'nodejs',
+    deployable: true,
     name: 'Node.js Hosting',
     short: 'Any framework, any version',
     icon: Code2,
@@ -222,7 +227,7 @@ enable-command-block=false
     },
     plans: NODE_PLANS,
     faq: [
-      ['Which Node.js versions are available?', 'Node.js 18, 20 and 22 LTS. Set it in package.json engines or in your service settings.'],
+      ['Which Node.js versions are available?', 'Node.js 24 LTS (recommended) and 22 LTS. Pick it in the service settings. Node.js 18 and 20 have reached end of life.'],
       ['Can I use a custom domain?', 'Yes, on every paid plan. HTTPS is configured automatically.'],
       ['Do you support pnpm, yarn and Bun?', 'Yes. We detect your lockfile and use the matching package manager.'],
     ],
@@ -230,6 +235,7 @@ enable-command-block=false
   },
   {
     slug: 'apis',
+    deployable: true,
     name: 'API Hosting',
     short: 'Fast APIs with a public URL',
     icon: Network,
@@ -273,6 +279,7 @@ serve({ fetch: app.fetch, port: Number(process.env.PORT) });`,
   },
   {
     slug: 'workers',
+    deployable: true,
     name: 'Background Workers',
     short: 'Queues, cron jobs and scripts',
     icon: Cpu,
@@ -315,6 +322,8 @@ cron.schedule('*/5 * * * *', async () => {
   },
   {
     slug: 'websites',
+    deployable: false,
+    badge: 'Coming soon',
     name: 'Website Hosting',
     short: 'Sites and portfolios from France',
     icon: Globe,

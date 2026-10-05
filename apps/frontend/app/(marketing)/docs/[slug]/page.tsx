@@ -58,7 +58,7 @@ export default async function DocArticlePage({ params }: PageProps<'/docs/[slug]
         <div className="mt-8 border-t border-white/[0.06] pt-2">{article.body}</div>
 
         <div className="mt-14 rounded-2xl border border-white/[0.07] bg-ink-900/60 p-5">
-          <ArticleFeedback />
+          <ArticleFeedback slug={slug} />
         </div>
 
         <div className="mt-8 grid gap-3 sm:grid-cols-2">

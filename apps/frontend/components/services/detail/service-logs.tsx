@@ -38,8 +38,15 @@ function highlight(text: string, q: string) {
 
 export function ServiceLogs() {
   const service = useService();
+  // A fresh stream and buffer per service.
+  return <ServiceLogsView key={service.id} />;
+}
+
+function ServiceLogsView() {
+  const service = useService();
   const toast = useToast();
-  const { lines, clear } = useServiceLogs(service);
+  const { lines, clear, state, error, loadOlder, hasOlder } = useServiceLogs(service.id);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [q, setQ] = useState('');
   const [auto, setAuto] = useState(true);
   // While paused, the view shows the lines captured at the moment the stream was paused.
@@ -119,20 +126,37 @@ export function ServiceLogs() {
             <Terminal className="h-3.5 w-3.5" /> {service.id} — production
           </div>
           <div className="flex items-center gap-2 font-mono text-[11px] text-ink-500">
-            {service.status === 'running' && !paused && (
+            {state === 'live' && !paused && (
               <span className="flex items-center gap-1.5 text-success-400">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success-400" /> live
               </span>
             )}
+            {(state === 'connecting' || state === 'reconnecting') && <span className="text-ink-400">{state}…</span>}
             {paused && <span className="text-warning-400">paused</span>}
             {visible.length} lines
           </div>
         </div>
+        {error && <p className="border-b border-white/[0.06] px-4 py-2 text-xs text-danger-400">{error}</p>}
         <div ref={box} className="h-[520px] overflow-y-auto p-4 font-mono text-[12.5px] leading-6" role="log" aria-live="polite">
+          {hasOlder && lines.length >= 200 && !paused && (
+            <button
+              type="button"
+              disabled={loadingOlder}
+              onClick={async () => {
+                setLoadingOlder(true);
+                setAuto(false);
+                await loadOlder();
+                setLoadingOlder(false);
+              }}
+              className="mb-2 w-full rounded-lg border border-white/[0.06] py-1.5 text-xs text-ink-400 transition hover:border-white/15 hover:text-white"
+            >
+              {loadingOlder ? 'Loading…' : 'Load earlier lines'}
+            </button>
+          )}
           {visible.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center text-center text-ink-500">
               <Terminal className="mb-3 h-6 w-6" />
-              {shown.length === 0 ? (service.status === 'running' ? 'Waiting for new log lines...' : 'No logs. Start the service to see output.') : 'No lines match your filters.'}
+              {shown.length === 0 ? (service.status === 'running' ? 'Waiting for new log lines...' : 'No logs retained for this service. Start it to see output.') : 'No lines match your filters.'}
             </div>
           ) : (
             visible.map((l) => (

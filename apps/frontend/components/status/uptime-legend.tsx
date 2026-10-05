@@ -1,11 +1,12 @@
-import type { DayState } from '@/data/status';
+import type { DayState } from '@digitalycloud/shared';
 import { cn } from '@/lib/utils';
 
-const LEGEND: { state: DayState; label: string; color: string }[] = [
+const LEGEND: { state: DayState | 'nodata'; label: string; color: string }[] = [
   { state: 'ok', label: 'Operational', color: 'bg-success-500/80' },
   { state: 'maintenance', label: 'Maintenance', color: 'bg-brand-500' },
   { state: 'degraded', label: 'Degraded', color: 'bg-warning-500' },
   { state: 'outage', label: 'Outage', color: 'bg-danger-500' },
+  { state: 'nodata', label: 'No data', color: 'bg-white/[0.06]' },
 ];
 
 export function UptimeLegend() {

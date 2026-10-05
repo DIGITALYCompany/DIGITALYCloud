@@ -10,12 +10,14 @@ interface Props {
   plan: PlanId;
   plans: Plan[];
   value: string;
+  /** Regions with free capacity right now; null while unknown (nothing is disabled). */
+  available?: Set<string> | null;
   onSelect: (region: Region) => void;
   /** Called for regions locked on the current plan. */
   onUpgrade: (region: Region) => void;
 }
 
-export function RegionPicker({ plan, plans, value, onSelect, onUpgrade }: Props) {
+export function RegionPicker({ plan, plans, value, available = null, onSelect, onUpgrade }: Props) {
   return (
     <div className="space-y-6">
       {REGION_AREAS.map((area) => {
@@ -32,15 +34,18 @@ export function RegionPicker({ plan, plans, value, onSelect, onUpgrade }: Props)
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {regions.map((r) => {
                 const allowed = isRegionAllowed(r, plan);
+                const hasCapacity = !available || available.has(r.id);
                 const selected = value === r.id;
                 const required = plans.find((p) => p.id === r.minPlan);
                 return (
                   <button
                     key={r.id}
                     type="button"
+                    disabled={!hasCapacity}
+                    title={hasCapacity ? undefined : 'No capacity in this region right now'}
                     onClick={() => (allowed ? onSelect(r) : onUpgrade(r))}
                     className={cn(
-                      'group relative flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-all duration-200',
+                      'group relative flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-45',
                       selected
                         ? 'border-brand-500/70 bg-brand-500/[0.07] shadow-[0_0_0_3px_rgba(37,99,255,0.12)]'
                         : allowed
@@ -58,7 +63,9 @@ export function RegionPicker({ plan, plans, value, onSelect, onUpgrade }: Props)
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className={cn('block truncate text-sm font-medium', allowed ? 'text-white' : 'text-ink-400')}>{r.city}</span>
-                      {allowed ? (
+                      {!hasCapacity ? (
+                        <span className="block truncate text-[11px] text-ink-500">Temporarily unavailable</span>
+                      ) : allowed ? (
                         <span className="block truncate font-mono text-[11px] text-ink-500">
                           {r.code} · ~{r.latencyMs} ms from Paris
                         </span>

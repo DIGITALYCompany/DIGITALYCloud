@@ -9,7 +9,9 @@ import { PageHeader } from '@/components/ui/page-header';
 import { useAuth } from '@/providers/auth-provider';
 import { useCloud } from '@/providers/cloud-provider';
 import { useToast } from '@/providers/toast-provider';
+import { api, errorMessage } from '@/lib/api';
 import type { AppHref } from '@/lib/routes';
+import type { TicketPriority } from '@digitalycloud/shared';
 
 const LINKS: { href: AppHref; icon: typeof BookOpen; title: string; desc: string }[] = [
   { href: '/docs', icon: BookOpen, title: 'Documentation', desc: 'Guides for bots, Node.js apps and APIs.' },
@@ -31,11 +33,15 @@ export function SupportView() {
     e.preventDefault();
     if (!valid) return;
     setBusy(true);
-    // No backend yet: simulate the request round-trip.
-    await new Promise((r) => setTimeout(r, 900));
-    setBusy(false);
-    setForm(EMPTY);
-    toast({ kind: 'success', title: 'Ticket #4821 created', description: `We'll reply to ${user?.email} within a few hours.` });
+    try {
+      const ticket = await api.support.createTicket({ subject: form.subject.trim(), serviceId: form.service || null, priority: form.priority as TicketPriority, message: form.message.trim() });
+      setForm(EMPTY);
+      toast({ kind: 'success', title: `Ticket #${ticket.number} created`, description: `We'll reply to ${user?.email} within a few hours.` });
+    } catch (err) {
+      toast({ kind: 'error', title: 'Ticket not sent', description: errorMessage(err) });
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
