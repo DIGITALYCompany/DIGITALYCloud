@@ -1,6 +1,18 @@
 # 07 — Frontend integration
 
-How to move `apps/frontend` from the mock backend to the real API, step by step, without rewriting components.
+> **Status (2026-10-05): done.** The steps below were the plan; the implementation differs in these points:
+> - There is **no mock mode** (`NEXT_PUBLIC_API_MODE` was dropped): `mock-api.ts`, `lib/simulation.ts` and `data/seed.ts` were deleted; `lib/api/index.ts` exports
+>   one typed `api` object over `lib/api/http-client.ts` (CSRF bootstrap and retry, `X-Team-Id`, `ApiError`, upload progress).
+> - Types come from `@digitalycloud/shared` (`lib/types.ts` aliases the DTOs); the catalog and regions too.
+> - `lib/api/events.ts` keeps one `/events?team=` EventSource per tab and handles `stream.resync`/`stream.revoked`.
+> - The tab's team is chosen in the account menu and stored per tab; `CloudProvider` is remounted per user and team.
+> - `api.auth.login` returns `User | { twoFactorRequired, challengeToken }`; Google returns `#challenge=` when 2FA is on.
+> - Paid creation and plan changes follow `402` → Stripe Checkout → `?checkout=success&operation=` polling.
+> - The status page is a Server Component (`lib/api/server.ts`, 60 s revalidation).
+>
+> Current per-screen status: [backend-coverage.md](backend-coverage.md#dashboard-screens).
+
+How `apps/frontend` was moved from the mock backend to the real API, step by step, without rewriting components.
 Contract: [05-api-reference.md](05-api-reference.md). Paths are relative to `apps/frontend/`.
 
 > Next.js 16 note (`AGENTS.md`): read `node_modules/next/dist/docs/` before writing framework code such as `proxy.ts`.

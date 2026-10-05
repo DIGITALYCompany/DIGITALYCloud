@@ -19,7 +19,8 @@ export function ServiceCard({ service }: { service: Service }) {
   const a = useServiceActions(service);
   const T = SERVICE_TYPES[service.type];
   const running = service.status === 'running';
-  const ramPct = service.ramLimitMb ? (service.ramMb / service.ramLimitMb) * 100 : 0;
+  const measured = running && service.metricsAt !== null;
+  const ramPct = measured && service.ramLimitMb ? (service.ramMb / service.ramLimitMb) * 100 : 0;
 
   return (
     <div className="card card-hover group flex flex-col p-5">
@@ -39,11 +40,11 @@ export function ServiceCard({ service }: { service: Service }) {
       <div className="mt-5 grid grid-cols-3 gap-3 rounded-xl border border-white/[0.05] bg-white/[0.02] p-3">
         <div>
           <p className="text-[11px] text-ink-500">CPU</p>
-          <p className="font-mono text-sm text-white">{service.cpu.toFixed(1)}%</p>
+          <p className="font-mono text-sm text-white">{measured ? `${service.cpu.toFixed(1)}%` : '—'}</p>
         </div>
         <div>
           <p className="text-[11px] text-ink-500">RAM</p>
-          <p className="font-mono text-sm text-white">{formatMb(service.ramMb)}</p>
+          <p className="font-mono text-sm text-white">{measured ? formatMb(service.ramMb) : '—'}</p>
         </div>
         <div>
           <p className="text-[11px] text-ink-500">Uptime</p>
@@ -56,7 +57,7 @@ export function ServiceCard({ service }: { service: Service }) {
         <span className="shrink-0 font-mono">{formatMb(service.ramLimitMb)}</span>
       </div>
       <p className="mt-3 text-xs text-ink-500">
-        {service.region} · Deployed {timeAgo(service.lastDeployAt)}
+        {service.region} · {service.lastDeployAt ? `Deployed ${timeAgo(service.lastDeployAt)}` : 'Not deployed yet'}
       </p>
 
       <div className="mt-5 flex items-center gap-2 border-t border-white/[0.05] pt-4">

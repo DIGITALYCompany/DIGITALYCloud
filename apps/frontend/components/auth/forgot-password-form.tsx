@@ -4,7 +4,7 @@ import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, MailCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { api } from '@/lib/api';
+import { api, errorMessage } from '@/lib/api';
 import { FormError } from './auth-form-parts';
 
 export function ForgotPasswordForm() {
@@ -21,7 +21,7 @@ export function ForgotPasswordForm() {
       await api.auth.requestReset(email);
       setSent(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong.');
+      setError(errorMessage(err));
     } finally {
       setBusy(false);
     }

@@ -10,7 +10,7 @@ export const PLATFORM_DOCS: DocArticle[] = [
     minutes: 3,
     body: (
       <>
-        <P>Environment variables are encrypted at rest and injected into your service when it starts. Changing a variable triggers a restart so the new value is picked up.</P>
+        <P>Environment variables are encrypted at rest and injected into your service when it starts. Changes apply the next time the service starts: restart or redeploy it to pick up new values. Secret values are masked in build and runtime logs.</P>
         <CodeBlock lang="bash" code={`DISCORD_TOKEN=************\nDATABASE_URL=************\nNODE_ENV=production`} />
         <H2 id="naming">Naming conventions</H2>
         <UL
@@ -138,8 +138,9 @@ export const PLATFORM_DOCS: DocArticle[] = [
           head={['Role', 'Can do']}
           rows={[
             ['Owner', 'Everything, including billing and deleting the account.'],
-            ['Admin', 'Manage services, deployments, variables and team members.'],
-            ['Developer', 'Deploy, restart and read logs. Cannot see billing.'],
+            ['Admin', 'Manage services, plans, variables, API keys and team members. Cannot see invoices or payment details.'],
+            ['Developer', 'Deploy, start, stop, restart and read logs and variables. Cannot change settings, variables or billing.'],
+            ['Viewer', 'Read-only access. Secret values stay hidden.'],
           ]}
         />
         <Callout kind="tip">Give people the lowest role they need. You can always promote them later.</Callout>

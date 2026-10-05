@@ -4,7 +4,7 @@ import { Activity, Bot, CheckCircle2, Code2, GitCommit, Server } from 'lucide-re
 import { CHART_COLORS, Sparkline } from '@/components/charts/charts';
 import { Dot } from '@/components/ui/badge';
 import { WindowDots } from '@/components/marketing/window-dots';
-import { useLiveSeries } from '@/hooks/use-live-series';
+import { usePreviewSeries } from './use-preview-series';
 
 const services = [
   { name: 'SyncBot', type: 'Discord Bot', icon: Bot, cpu: '2.4%', ram: '186 MB', status: 'Online' },
@@ -19,12 +19,12 @@ const activity = [
 ];
 
 export function DashboardPreview() {
-  const live = useLiveSeries('landing-preview', (random) => ({ cpu: 18 + random() * 14, ram: 44 + random() * 6 }), 28, 1500);
+  const live = usePreviewSeries('landing-preview', (random) => ({ cpu: 18 + random() * 14, ram: 44 + random() * 6 }), 28, 1500);
   const cpuNow = Number(live[live.length - 1].cpu).toFixed(1);
   const ramNow = Number(live[live.length - 1].ram).toFixed(0);
 
   return (
-    <div className="relative mx-auto w-full max-w-5xl">
+    <figure className="relative mx-auto w-full max-w-5xl" aria-label="Illustration of the DIGITALYCloud dashboard with example data">
       <div className="absolute -inset-6 animate-glow rounded-[40px] bg-brand-gradient-3 opacity-60 blur-3xl" />
       <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-ink-900/90 shadow-2xl shadow-black/60 backdrop-blur-xl">
         <div className="flex items-center gap-2 border-b border-white/[0.06] px-4 py-3">
@@ -108,6 +108,7 @@ export function DashboardPreview() {
           </div>
         </div>
       </div>
-    </div>
+      <figcaption className="relative mt-3 text-center text-[11px] text-ink-500">Illustration with example data</figcaption>
+    </figure>
   );
 }

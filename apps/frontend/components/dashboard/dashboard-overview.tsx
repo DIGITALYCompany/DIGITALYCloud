@@ -12,9 +12,11 @@ import { ProgressBar } from '@/components/ui/progress-bar';
 import { CardSkeleton, Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/providers/auth-provider';
 import { useCloud } from '@/providers/cloud-provider';
-import { formatMb, greeting, timeAgo } from '@/lib/format';
+import { formatMb, greeting, hourLabelOf, timeAgo } from '@/lib/format';
 import type { AppHref } from '@/lib/routes';
-import { hourLabel, makeSeries } from '@/lib/simulation';
+import { api } from '@/lib/api';
+import { useApi } from '@/hooks/use-api';
+import { STATUS_COPY, useSystemStatus } from '@/hooks/use-system-status';
 import { cn } from '@/lib/utils';
 import type { ServiceStatus } from '@/lib/types';
 import { AttentionBanner } from './attention-banner';
@@ -22,7 +24,7 @@ import { PlansCard } from './plans-card';
 import { ServiceRow } from './service-row';
 
 const QUICK: { href: AppHref; label: string; hint: string; icon: typeof Plus; primary?: boolean }[] = [
-  { href: '/services/new', label: 'New service', hint: 'Bot, app, API or game', icon: Plus, primary: true },
+  { href: '/services/new', label: 'New service', hint: 'Bot, app, API or worker', icon: Plus, primary: true },
   { href: '/settings?tab=api', label: 'API keys', hint: 'Automate deploys', icon: KeyRound },
   { href: '/settings?tab=team', label: 'Invite team', hint: 'Share your projects', icon: Users },
   { href: '/support', label: 'Get help', hint: 'Talk to our team', icon: LifeBuoy },
@@ -45,7 +47,12 @@ export function DashboardOverview() {
   const [query, setQuery] = useState('');
   const [today] = useState(todayLabel);
 
-  const usage = useMemo(() => makeSeries('dash-usage', 24, { cpu: { base: 24, spread: 14, min: 4, max: 90 }, ram: { base: 47, spread: 8, min: 20, max: 95 } }, hourLabel(24)), []);
+  // Capacity-weighted team usage per hour; hours without samples stay empty.
+  const usageReq = useApi(() => api.metrics.usage(), []);
+  const usage = useMemo(() => (usageReq.data?.data ?? []).map((p) => ({ t: hourLabelOf(p.ts), cpu: p.cpu, ram: p.ram })), [usageReq.data]);
+  const hasUsage = usage.some((p) => p.cpu !== null || p.ram !== null);
+  const status = useSystemStatus();
+  const statusCopy = STATUS_COPY[status?.current ?? 'unknown'];
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -57,8 +64,10 @@ export function DashboardOverview() {
 
   const online = services.filter((s) => s.status === 'running');
   const attention = services.filter((s) => s.status === 'failed' || s.status === 'stopped');
-  const avgCpu = online.length ? online.reduce((sum, s) => sum + s.cpu, 0) / online.length : 0;
-  const usedRam = online.reduce((sum, s) => sum + s.ramMb, 0);
+  // Only services with a live sample count; an unmeasured service is not a measured 0 %.
+  const measured = online.filter((s) => s.metricsAt !== null);
+  const avgCpu = measured.length ? measured.reduce((sum, s) => sum + s.cpu, 0) / measured.length : null;
+  const usedRam = measured.reduce((sum, s) => sum + s.ramMb, 0);
   const ramLimit = services.reduce((sum, s) => sum + s.ramLimitMb, 0) || 1;
   const health = services.length ? Math.round((online.length / services.length) * 100) : 100;
   const lastDeploy = deployments[0];
@@ -87,7 +96,13 @@ export function DashboardOverview() {
               </>
             ) : (
               <>
-                <Dot tone="success" pulse /> All {services.length} services are running smoothly
+                {services.length === 0 ? (
+                  'No services yet'
+                ) : (
+                  <>
+                    <Dot tone="success" pulse /> All {services.length} services are running smoothly
+                  </>
+                )}
               </>
             )}
           </p>
@@ -127,7 +142,13 @@ export function DashboardOverview() {
               sub={`${health}% healthy`}
               footer={<ProgressBar value={health} tone={health === 100 ? 'success' : health >= 70 ? 'warning' : 'danger'} />}
             />
-            <StatCard label="Average CPU" icon={<Cpu />} value={`${avgCpu.toFixed(1)}%`} sub="Live, across running services" footer={<ProgressBar value={avgCpu} />} />
+            <StatCard
+              label="Average CPU"
+              icon={<Cpu />}
+              value={avgCpu === null ? '—' : `${avgCpu.toFixed(1)}%`}
+              sub={avgCpu === null ? 'No live measurements yet' : 'Live, across running services'}
+              footer={<ProgressBar value={avgCpu ?? 0} />}
+            />
             <StatCard
               label="Memory in use"
               icon={<MemoryStick />}
@@ -217,7 +238,7 @@ export function DashboardOverview() {
                 <Boxes className="h-5 w-5" />
               </span>
               <p className="mt-4 font-medium text-white">No services yet</p>
-              <p className="mt-1 text-sm text-ink-400">Deploy a bot, an app or a game server in a few clicks.</p>
+              <p className="mt-1 text-sm text-ink-400">Deploy a bot, an app, an API or a worker in a few clicks.</p>
               <ButtonLink href="/services/new" size="sm" className="mt-5" icon={<Plus className="h-4 w-4" />}>
                 Create your first service
               </ButtonLink>
@@ -275,8 +296,12 @@ export function DashboardOverview() {
             </div>
           }
         >
-          {loading ? (
+          {loading || usageReq.loading ? (
             <Skeleton className="h-[260px] w-full" />
+          ) : usageReq.error ? (
+            <ErrorState message={usageReq.error} onRetry={usageReq.reload} />
+          ) : !hasUsage ? (
+            <div className="flex h-[260px] items-center justify-center text-center text-sm text-ink-400">No usage recorded in the last 24 hours. Charts fill in once a service runs.</div>
           ) : (
             <AreaSeriesChart
               data={usage}
@@ -347,10 +372,19 @@ export function DashboardOverview() {
             href="/status"
             target="_blank"
             rel="noopener noreferrer"
-            className="mx-4 mb-4 flex items-center gap-3 rounded-xl border border-success-500/20 bg-success-500/[0.06] px-4 py-3 text-sm text-white transition hover:border-success-500/40"
+            className={cn(
+              'mx-4 mb-4 flex items-center gap-3 rounded-xl border px-4 py-3 text-sm text-white transition',
+              statusCopy.tone === 'success'
+                ? 'border-success-500/20 bg-success-500/[0.06] hover:border-success-500/40'
+                : statusCopy.tone === 'danger'
+                  ? 'border-danger-500/20 bg-danger-500/[0.06] hover:border-danger-500/40'
+                  : statusCopy.tone === 'warning'
+                    ? 'border-warning-500/20 bg-warning-500/[0.06] hover:border-warning-500/40'
+                    : 'border-white/[0.07] bg-white/[0.02] hover:border-white/20'
+            )}
           >
-            <Activity className="h-4 w-4 text-success-400" />
-            All systems operational
+            <Activity className={cn('h-4 w-4', statusCopy.tone === 'success' ? 'text-success-400' : statusCopy.tone === 'danger' ? 'text-danger-400' : statusCopy.tone === 'warning' ? 'text-warning-400' : 'text-ink-400')} />
+            {statusCopy.label}
             <ArrowUpRight className="ml-auto h-3.5 w-3.5 text-ink-400" />
           </a>
         </Panel>

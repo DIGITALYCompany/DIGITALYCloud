@@ -1,14 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { ENV_KEY_RE, MESSAGES, RESERVED_ENV_PREFIX } from '@digitalycloud/shared';
 import { Copy, Eye, EyeOff, KeyRound, Lock, Pencil, Plus, ShieldAlert, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ConfirmDialog, Modal } from '@/components/ui/modal';
 import { Switch } from '@/components/ui/switch';
 import { Tooltip } from '@/components/ui/tooltip';
+import { useAuth } from '@/providers/auth-provider';
 import { useCloud } from '@/providers/cloud-provider';
 import { useToast } from '@/providers/toast-provider';
+import { errorMessage } from '@/lib/api';
 import { copyToClipboard } from '@/lib/browser';
 import { uid } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -20,8 +23,16 @@ const ROW_ACTION = 'rounded-lg p-2 text-ink-400 transition hover:bg-white/[0.06]
 
 export function ServiceEnvironment() {
   const service = useService();
-  const { setEnv } = useCloud();
+  const { setEnv, refreshService } = useCloud();
+  const { can, team } = useAuth();
   const toast = useToast();
+  const writable = can('services.env.write');
+  const redacted = team?.role === 'viewer';
+
+  // Values can change in another tab or through the API: load the current set when the tab opens.
+  useEffect(() => {
+    refreshService(service.id).catch(() => {});
+  }, [service.id, refreshService]);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<EnvVar | null>(null);
   const [deleting, setDeleting] = useState<EnvVar | null>(null);
@@ -44,17 +55,18 @@ export function ServiceEnvironment() {
   const save = async () => {
     if (!editing) return;
     const key = editing.key.trim();
-    if (!/^[A-Z_][A-Z0-9_]*$/.test(key)) return setError('Keys must use uppercase letters, numbers and underscores.');
+    if (!ENV_KEY_RE.test(key)) return setError(MESSAGES.envKey);
+    if (key.startsWith(RESERVED_ENV_PREFIX)) return setError(MESSAGES.envReserved);
     if (service.env.some((v) => v.key === key && v.id !== editing.id)) return setError(`${key} already exists.`);
     setSaving(true);
     const exists = service.env.some((v) => v.id === editing.id);
     const next = exists ? service.env.map((v) => (v.id === editing.id ? { ...editing, key } : v)) : [...service.env, { ...editing, key }];
     try {
       await setEnv(service.id, next);
-      toast({ kind: 'success', title: exists ? `${key} updated` : `${key} added`, description: 'Restart the service to apply changes.' });
+      toast({ kind: 'success', title: exists ? `${key} updated` : `${key} added`, description: service.status === 'running' ? 'Restart or redeploy the service to apply changes.' : undefined });
       setEditing(null);
-    } catch {
-      setError('Could not save the variable. Please try again.');
+    } catch (e) {
+      setError(errorMessage(e, 'Could not save the variable. Please try again.'));
     } finally {
       setSaving(false);
     }
@@ -66,15 +78,20 @@ export function ServiceEnvironment() {
         <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-warning-400" />
         <div>
           <p className="text-sm font-medium text-white">Never expose secret credentials in your source code.</p>
-          <p className="mt-0.5 text-sm text-ink-300">Variables are encrypted at rest and only injected into your service at runtime.</p>
+          <p className="mt-0.5 text-sm text-ink-300">
+            Variables are encrypted at rest and only injected into your service at runtime. Secret values are masked in logs.
+            {redacted && ' Values are hidden for viewers.'}
+          </p>
         </div>
       </div>
 
       <div className="flex items-center justify-between">
         <p className="text-sm text-ink-400">{service.env.length} variables</p>
-        <Button icon={<Plus className="h-4 w-4" />} onClick={() => startEditing({ id: uid('e'), key: '', value: '', secret: true })}>
-          Add variable
-        </Button>
+        {writable && (
+          <Button icon={<Plus className="h-4 w-4" />} onClick={() => startEditing({ id: uid('e'), key: '', value: '', secret: true })}>
+            Add variable
+          </Button>
+        )}
       </div>
 
       {service.env.length === 0 ? (
@@ -82,7 +99,7 @@ export function ServiceEnvironment() {
       ) : (
         <div className="card divide-y divide-white/[0.05] overflow-hidden">
           {service.env.map((v) => {
-            const show = !v.secret || revealed.has(v.id);
+            const show = !redacted && (!v.secret || revealed.has(v.id));
             return (
               <div key={v.id} className="flex flex-col gap-2 px-5 py-3.5 transition hover:bg-white/[0.02] sm:flex-row sm:items-center sm:gap-4">
                 <div className="flex items-center gap-2 sm:w-64">
@@ -91,13 +108,14 @@ export function ServiceEnvironment() {
                 </div>
                 <span className={cn('min-w-0 flex-1 truncate font-mono text-sm', show ? 'text-ink-200' : 'tracking-widest text-ink-500')}>{show ? v.value : MASK}</span>
                 <div className="flex gap-1">
-                  {v.secret && (
+                  {v.secret && !redacted && (
                     <Tooltip label={show ? 'Hide' : 'Reveal'}>
                       <button onClick={() => toggle(v.id)} className={ROW_ACTION} aria-label={show ? `Hide ${v.key}` : `Reveal ${v.key}`}>
                         {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </button>
                     </Tooltip>
                   )}
+                  {!redacted && (
                   <Tooltip label="Copy value">
                     <button
                       onClick={() => {
@@ -110,6 +128,9 @@ export function ServiceEnvironment() {
                       <Copy className="h-4 w-4" />
                     </button>
                   </Tooltip>
+                  )}
+                  {writable && (
+                    <>
                   <Tooltip label="Edit">
                     <button onClick={() => startEditing({ ...v })} className={ROW_ACTION} aria-label={`Edit ${v.key}`}>
                       <Pencil className="h-4 w-4" />
@@ -120,6 +141,8 @@ export function ServiceEnvironment() {
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </Tooltip>
+                    </>
+                  )}
                 </div>
               </div>
             );

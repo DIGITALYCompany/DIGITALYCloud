@@ -1,32 +1,40 @@
 'use client';
 
-import { useMemo } from 'react';
-import { Activity, Box, Cpu, Globe2, HardDrive, MemoryStick, Server as ServerIcon, ShieldCheck, Wrench, Zap } from 'lucide-react';
-import { AreaSeriesChart, BarSeriesChart, CHART_COLORS, Sparkline } from '@/components/charts/charts';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Activity, Box, Cpu, Globe2, MemoryStick, Server as ServerIcon, ShieldCheck, Wrench } from 'lucide-react';
+import { AreaSeriesChart, CHART_COLORS, Sparkline, type Point } from '@/components/charts/charts';
 import { Badge, Dot } from '@/components/ui/badge';
 import { MetricRow, Panel, StatCard } from '@/components/ui/card';
+import { EmptyState, ErrorState } from '@/components/ui/empty-state';
 import { PageHeader } from '@/components/ui/page-header';
 import { ProgressBar } from '@/components/ui/progress-bar';
+import { CardSkeleton, Skeleton } from '@/components/ui/skeleton';
 import { Tooltip } from '@/components/ui/tooltip';
-import { useLiveSeries } from '@/hooks/use-live-series';
-import { SERVERS } from '@/data/seed';
-import { hourLabel, makeSeries } from '@/lib/simulation';
+import { getRegion } from '@/data/regions';
+import { useApi } from '@/hooks/use-api';
+import { api } from '@/lib/api';
+import { formatClock, hourLabelOf, timeAgo } from '@/lib/format';
 import type { Server } from '@/lib/types';
 
 const tone = (v: number) => (v > 85 ? 'danger' : v > 70 ? 'warning' : 'brand');
+const pct = (v: number | null) => (v === null ? '—' : `${Math.round(v)}%`);
+const POLL_MS = 15_000;
+const REGION_COLORS = [CHART_COLORS.primary, CHART_COLORS.secondary, CHART_COLORS.accent, CHART_COLORS.green, CHART_COLORS.sky];
 
-const REGIONS = [
-  { city: 'Lyon', dc: 'DIGITALY LYS-1', servers: 2, latency: 4 },
-  { city: 'Paris', dc: 'DIGITALY PAR-1', servers: 1, latency: 6 },
-];
+const STATUS_BADGE: Record<Server['status'], { tone: 'success' | 'warning' | 'danger'; label: string }> = {
+  healthy: { tone: 'success', label: 'Healthy' },
+  degraded: { tone: 'warning', label: 'Degraded' },
+  maintenance: { tone: 'warning', label: 'Maintenance' },
+  offline: { tone: 'danger', label: 'Offline' },
+};
 
-function ServerCard({ s }: { s: Server }) {
-  const live = useLiveSeries(`server-${s.id}`, (random) => ({ cpu: Math.max(0, s.cpu + (random() - 0.5) * 10) }), 24, 2500);
-  const current = live[live.length - 1].cpu as number;
-  const maintenance = s.status === 'maintenance';
+/** `samples` are the CPU values this page has polled (real readings only, nothing interpolated). */
+function ServerCard({ s, samples }: { s: Server; samples: Point[] }) {
+  const badge = STATUS_BADGE[s.status];
+  const measured = s.cpu !== null;
   return (
     <div className="card card-hover relative overflow-hidden p-6">
-      {!maintenance && <div className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-brand-500/10 blur-3xl" />}
+      {s.status === 'healthy' && <div className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-brand-500/10 blur-3xl" />}
       <div className="relative flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.03]">
@@ -39,42 +47,34 @@ function ServerCard({ s }: { s: Server }) {
             </p>
           </div>
         </div>
-        {maintenance ? (
-          <Badge tone="warning">
-            <Wrench className="h-3 w-3" /> Maintenance
-          </Badge>
-        ) : (
-          <Badge tone="success">
-            <Dot tone="success" pulse /> Healthy
-          </Badge>
-        )}
+        <Badge tone={badge.tone}>
+          {s.status === 'maintenance' ? <Wrench className="h-3 w-3" /> : <Dot tone={badge.tone} pulse={s.status === 'healthy'} />} {badge.label}
+        </Badge>
       </div>
 
-      {!maintenance && (
-        <div className="relative mt-5">
-          <div className="mb-1 flex items-baseline justify-between">
-            <span className="text-xs text-ink-400">Live CPU</span>
-            <span className="font-mono text-sm text-white">{current.toFixed(1)}%</span>
-          </div>
-          <Sparkline data={live} dataKey="cpu" height={44} />
+      <div className="relative mt-5">
+        <div className="mb-1 flex items-baseline justify-between">
+          <span className="text-xs text-ink-400">Live CPU</span>
+          <span className="font-mono text-sm text-white">{measured ? `${s.cpu!.toFixed(1)}%` : 'No recent sample'}</span>
         </div>
-      )}
+        {samples.length > 1 ? <Sparkline data={samples} dataKey="cpu" height={44} /> : <div className="flex h-11 items-center text-xs text-ink-500">Collecting samples…</div>}
+      </div>
 
       <div className="relative mt-5 space-y-4">
-        <MetricRow label="CPU" value={`${s.cpu}%`}>
-          <ProgressBar value={s.cpu} tone={tone(s.cpu)} />
+        <MetricRow label="CPU" value={pct(s.cpu)}>
+          <ProgressBar value={s.cpu ?? 0} tone={tone(s.cpu ?? 0)} />
         </MetricRow>
-        <MetricRow label="RAM" value={`${s.ram}% of ${s.memoryGb} GB`}>
-          <ProgressBar value={s.ram} tone={tone(s.ram)} />
+        <MetricRow label="RAM" value={s.ram === null ? `— of ${s.memoryGb} GB` : `${Math.round(s.ram)}% of ${s.memoryGb} GB`}>
+          <ProgressBar value={s.ram ?? 0} tone={tone(s.ram ?? 0)} />
         </MetricRow>
-        <MetricRow label="Storage" value={`${s.storage}% of ${s.diskTb} TB`}>
-          <ProgressBar value={s.storage} tone={tone(s.storage)} />
+        <MetricRow label="Storage" value={s.storage === null ? `— of ${s.diskTb} TB` : `${Math.round(s.storage)}% of ${s.diskTb} TB`}>
+          <ProgressBar value={s.storage ?? 0} tone={tone(s.storage ?? 0)} />
         </MetricRow>
       </div>
 
       <div className="relative mt-6 grid grid-cols-3 gap-3 border-t border-white/[0.06] pt-5 text-center">
         <div>
-          <p className="font-mono text-lg text-white">{s.containers}</p>
+          <p className="font-mono text-lg text-white">{s.containers ?? '—'}</p>
           <p className="text-xs text-ink-500">Containers</p>
         </div>
         <div>
@@ -82,32 +82,62 @@ function ServerCard({ s }: { s: Server }) {
           <p className="text-xs text-ink-500">vCores</p>
         </div>
         <div>
-          <p className="font-mono text-lg text-white">{s.uptimeDays}d</p>
+          <p className="font-mono text-lg text-white">{s.uptimeDays === null ? '—' : `${s.uptimeDays}d`}</p>
           <p className="text-xs text-ink-500">Uptime</p>
         </div>
       </div>
-      <p className="relative mt-4 font-mono text-[11px] text-ink-500">{s.ip} · NVMe · 10 Gbps</p>
+      <p className="relative mt-4 font-mono text-[11px] text-ink-500">
+        {[s.ip, s.sampledAt ? `sampled ${timeAgo(s.sampledAt)}` : 'no samples yet'].filter(Boolean).join(' · ')}
+      </p>
     </div>
   );
 }
 
 export function ServersView() {
-  const online = SERVERS.filter((s) => s.status === 'healthy');
-  const containers = SERVERS.reduce((a, s) => a + s.containers, 0);
-  const avgCpu = Math.round(online.reduce((a, s) => a + s.cpu, 0) / online.length);
-  const avgRam = Math.round(online.reduce((a, s) => a + s.ram, 0) / online.length);
-
-  const load = useMemo(() => makeSeries('infra-load', 24, { lyon: { base: 34, spread: 14, max: 100 }, paris: { base: 21, spread: 10, max: 100 } }, hourLabel(24)), []);
-  const network = useMemo(() => makeSeries('infra-net', 24, { inbound: { base: 420, spread: 160 }, outbound: { base: 310, spread: 120 } }, hourLabel(24)), []);
-  const scheduled = useMemo(
+  const [history, setHistory] = useState<Record<string, Point[]>>({});
+  // Each poll appends the readings it saw; cards chart only those real samples.
+  const servers = useApi(
     () =>
-      makeSeries('infra-containers', 12, { lyon: { base: 6, spread: 4 }, paris: { base: 4, spread: 3 } }, hourLabel(12)).map((p) => ({
-        ...p,
-        lyon: Math.round(p.lyon as number),
-        paris: Math.round(p.paris as number),
-      })),
+      api.servers.list().then((list) => {
+        setHistory((h) => {
+          const next = { ...h };
+          for (const s of list) {
+            if (s.cpu === null || s.sampledAt === null) continue;
+            const seen = next[s.id] ?? [];
+            if (seen.at(-1)?.ts === s.sampledAt) continue;
+            next[s.id] = [...seen.slice(-23), { t: formatClock(s.sampledAt), ts: s.sampledAt, cpu: s.cpu }];
+          }
+          return next;
+        });
+        return list;
+      }),
     []
   );
+  const load = useApi(() => api.servers.load(), []);
+  const reloadServers = useRef(servers.reload);
+  useEffect(() => {
+    reloadServers.current = servers.reload;
+  });
+
+  // Poll for fresh readings; each card keeps the samples seen while the page is open.
+  useEffect(() => {
+    const t = setInterval(() => void reloadServers.current(), POLL_MS);
+    return () => clearInterval(t);
+  }, []);
+
+  const list = useMemo(() => servers.data ?? [], [servers.data]);
+  const regionIds = useMemo(() => [...new Set(list.map((s) => s.regionId))], [list]);
+  const chart = useMemo(() => (load.data ?? []).map((p) => ({ ...p, t: hourLabelOf(p.ts) })) as Point[], [load.data]);
+  const hasLoad = chart.some((p) => regionIds.some((r) => typeof p[r] === 'number'));
+
+  if (servers.error && !servers.data) return <ErrorState message={servers.error} onRetry={servers.reload} />;
+
+  const online = list.filter((s) => s.status === 'healthy');
+  const inMaintenance = list.filter((s) => s.status === 'maintenance').length;
+  const measured = online.filter((s) => s.cpu !== null && s.ram !== null);
+  const containers = list.reduce((a, s) => a + (s.containers ?? 0), 0);
+  const avgCpu = measured.length ? Math.round(measured.reduce((a, s) => a + s.cpu!, 0) / measured.length) : null;
+  const avgRam = measured.length ? Math.round(measured.reduce((a, s) => a + s.ram!, 0) / measured.length) : null;
 
   return (
     <>
@@ -118,75 +148,82 @@ export function ServersView() {
           </span>
         }
         title="Infrastructure"
-        description="DIGITALY-owned servers in France. Your services run on dedicated hardware we operate ourselves."
+        description="DIGITALY-owned servers. Your services run on dedicated hardware we operate ourselves."
       />
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Servers online" value={`${online.length}/${SERVERS.length}`} icon={<ServerIcon />} sub="1 in planned maintenance" accent />
-        <StatCard label="Containers" value={containers} icon={<Box />} sub="Across all regions" />
-        <StatCard label="Avg. CPU" value={`${avgCpu}%`} icon={<Cpu />} sub="Healthy below 70%" />
-        <StatCard label="Avg. RAM" value={`${avgRam}%`} icon={<MemoryStick />} sub="Healthy below 80%" />
+        {servers.loading && !servers.data ? (
+          Array.from({ length: 4 }).map((_, i) => <CardSkeleton key={i} rows={2} />)
+        ) : (
+          <>
+            <StatCard
+              label="Servers online"
+              value={`${online.length}/${list.length}`}
+              icon={<ServerIcon />}
+              sub={inMaintenance ? `${inMaintenance} in planned maintenance` : 'No maintenance scheduled'}
+              accent
+            />
+            <StatCard label="Containers" value={containers} icon={<Box />} sub="Across all regions" />
+            <StatCard label="Avg. CPU" value={avgCpu === null ? '—' : `${avgCpu}%`} icon={<Cpu />} sub="Healthy below 70%" />
+            <StatCard label="Avg. RAM" value={avgRam === null ? '—' : `${avgRam}%`} icon={<MemoryStick />} sub="Healthy below 80%" />
+          </>
+        )}
       </div>
 
-      <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {SERVERS.map((s, i) => (
-          <div key={s.id} className="animate-fade-up" style={{ animationDelay: `${i * 70}ms` }}>
-            <ServerCard s={s} />
-          </div>
-        ))}
-      </div>
+      {!servers.loading && list.length === 0 ? (
+        <EmptyState icon={<ServerIcon />} title="No servers yet" description="Servers appear here once the platform team registers them." />
+      ) : (
+        <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {list.map((s, i) => (
+            <div key={s.id} className="animate-fade-up" style={{ animationDelay: `${i * 70}ms` }}>
+              <ServerCard s={s} samples={history[s.id] ?? []} />
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="grid gap-4 xl:grid-cols-3">
-        <Panel title="CPU load by server" description="Last 24 hours" className="xl:col-span-2" action={<Activity className="h-4 w-4 text-ink-400" />}>
-          <AreaSeriesChart
-            data={load}
-            yUnit="%"
-            yDomain={[0, 100]}
-            series={[
-              { key: 'lyon', name: 'Lyon-01', color: CHART_COLORS.primary, unit: '%' },
-              { key: 'paris', name: 'Paris-01', color: CHART_COLORS.secondary, unit: '%' },
-            ]}
-          />
-        </Panel>
-        <Panel title="Containers scheduled" description="Last 12 hours">
-          <BarSeriesChart
-            data={scheduled}
-            stacked
-            series={[
-              { key: 'lyon', name: 'Lyon-01', color: CHART_COLORS.primary },
-              { key: 'paris', name: 'Paris-01', color: CHART_COLORS.accent },
-            ]}
-          />
-        </Panel>
-        <Panel title="Network throughput" description="Mbps, last 24 hours" className="xl:col-span-2" action={<Zap className="h-4 w-4 text-ink-400" />}>
-          <AreaSeriesChart
-            data={network}
-            yUnit=""
-            series={[
-              { key: 'inbound', name: 'Inbound', color: CHART_COLORS.sky, unit: ' Mbps' },
-              { key: 'outbound', name: 'Outbound', color: CHART_COLORS.accent, unit: ' Mbps' },
-            ]}
-          />
+        <Panel title="CPU load by region" description="Hourly average, last 24 hours" className="xl:col-span-2" action={<Activity className="h-4 w-4 text-ink-400" />}>
+          {load.loading && !load.data ? (
+            <Skeleton className="h-[240px] w-full" />
+          ) : load.error ? (
+            <ErrorState message={load.error} onRetry={load.reload} />
+          ) : !hasLoad ? (
+            <div className="flex h-[240px] items-center justify-center text-sm text-ink-400">No load samples in the last 24 hours.</div>
+          ) : (
+            <AreaSeriesChart
+              data={chart}
+              yUnit="%"
+              yDomain={[0, 100]}
+              series={regionIds.map((r, i) => ({ key: r, name: getRegion(r)?.city ?? r, color: REGION_COLORS[i % REGION_COLORS.length], unit: '%' }))}
+            />
+          )}
         </Panel>
         <Panel title="Regions" description="Where your code runs">
           <div className="space-y-3">
-            {REGIONS.map((r) => (
-              <div key={r.city} className="flex items-center justify-between rounded-xl border border-white/[0.07] p-4 transition hover:border-white/15">
-                <div>
-                  <p className="text-sm font-medium text-white">France — {r.city}</p>
-                  <p className="font-mono text-xs text-ink-500">{r.dc}</p>
+            {regionIds.length === 0 && <p className="text-sm text-ink-400">No regions online yet.</p>}
+            {regionIds.map((r) => {
+              const region = getRegion(r);
+              const inRegion = list.filter((s) => s.regionId === r);
+              return (
+                <div key={r} className="flex items-center justify-between rounded-xl border border-white/[0.07] p-4 transition hover:border-white/15">
+                  <div>
+                    <p className="text-sm font-medium text-white">{region ? `${region.country} — ${region.city}` : r}</p>
+                    <p className="font-mono text-xs text-ink-500">{region?.code ?? r}</p>
+                  </div>
+                  <div className="text-right">
+                    {region && (
+                      <Tooltip label="Typical latency from France">
+                        <p className="font-mono text-sm text-success-400">{region.latencyMs} ms</p>
+                      </Tooltip>
+                    )}
+                    <p className="text-xs text-ink-500">
+                      {inRegion.length} server{inRegion.length === 1 ? '' : 's'}
+                    </p>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <Tooltip label="Median latency from France">
-                    <p className="font-mono text-sm text-success-400">{r.latency} ms</p>
-                  </Tooltip>
-                  <p className="text-xs text-ink-500">{r.servers} servers</p>
-                </div>
-              </div>
-            ))}
-            <div className="flex items-center gap-2 rounded-xl border border-dashed border-white/10 p-4 text-sm text-ink-400">
-              <HardDrive className="h-4 w-4" /> Marseille region coming in 2027
-            </div>
+              );
+            })}
           </div>
         </Panel>
       </div>

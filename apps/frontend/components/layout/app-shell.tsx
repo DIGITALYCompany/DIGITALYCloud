@@ -10,6 +10,8 @@ import { GlobalSearch } from './global-search';
 import { NotificationsMenu } from './notifications-menu';
 import { Sidebar } from './sidebar';
 import { useAuth } from '@/providers/auth-provider';
+import { STATUS_COPY, useSystemStatus } from '@/hooks/use-system-status';
+import { EmailVerificationBanner } from './email-verification-banner';
 import { BOTTOM_NAV } from '@/config/navigation';
 import { cn } from '@/lib/utils';
 
@@ -17,6 +19,8 @@ import { cn } from '@/lib/utils';
 export function AppShell({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const pathname = usePathname();
+  const status = useSystemStatus();
+  const statusCopy = STATUS_COPY[status?.current ?? 'unknown'];
   // The drawer belongs to the page it was opened on, so it closes on navigation.
   const [drawerOn, setDrawerOn] = useState<string | null>(null);
   const drawer = drawerOn === pathname;
@@ -67,7 +71,13 @@ export function AppShell({ children }: { children: ReactNode }) {
               rel="noopener noreferrer"
               className="mr-2 hidden items-center gap-2 rounded-full border border-white/[0.07] px-3 py-1 text-xs text-ink-300 transition hover:border-white/20 hover:text-white md:flex"
             >
-              <span className="h-1.5 w-1.5 rounded-full bg-success-400" /> All systems normal
+              <span
+                className={cn(
+                  'h-1.5 w-1.5 rounded-full',
+                  statusCopy.tone === 'success' ? 'bg-success-400' : statusCopy.tone === 'danger' ? 'bg-danger-500' : statusCopy.tone === 'warning' ? 'bg-warning-500' : 'bg-ink-400'
+                )}
+              />{' '}
+              {statusCopy.label}
             </a>
             <NotificationsMenu />
             <AccountMenu variant="app" />
@@ -75,6 +85,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </header>
 
         <main key={sectionKey} className="mx-auto max-w-[1400px] animate-fade-up px-4 pb-28 pt-6 sm:px-6 sm:pt-8 lg:px-10 lg:pb-16">
+          <EmailVerificationBanner />
           {children}
         </main>
       </div>

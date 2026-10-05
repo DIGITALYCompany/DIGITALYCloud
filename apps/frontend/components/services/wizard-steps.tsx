@@ -1,8 +1,13 @@
 'use client';
 
-import { useRef, useState, type ReactNode } from 'react';
-import { Box, Check, FileArchive, GitBranch, Github, Info, Lock, Plus, Trash2, UploadCloud } from 'lucide-react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Box, Check, FileArchive, GitBranch, Github, Info, Loader2, Lock, Plus, RefreshCw, Trash2, UploadCloud, XCircle } from 'lucide-react';
+import { SERVICE_DEFAULTS, UPLOAD_LIMITS, type CatalogResponse, type GithubConnectionDto } from '@digitalycloud/shared';
+import { Button } from '@/components/ui/button';
+import { ProgressBar } from '@/components/ui/progress-bar';
 import { DEFAULT_REGION, TIER_COVERAGE, getRegion, isRegionAllowed } from '@/data/regions';
+import { useApi } from '@/hooks/use-api';
+import { api, errorMessage } from '@/lib/api';
 import { NODE_VERSIONS, SERVICE_TYPES, getServicePlans } from '@/lib/catalog';
 import { formatMb, uid } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -16,6 +21,8 @@ export interface WizardState {
   branch: string;
   dockerImage: string;
   fileName: string;
+  /** Set once the archive finished uploading and passed validation. */
+  uploadId: string | null;
   name: string;
   nodeVersion: string;
   startCommand: string;
@@ -27,14 +34,31 @@ export interface WizardState {
 
 export type Patch = (p: Partial<WizardState>) => void;
 
-function OptionCard({ selected, onClick, icon, title, description, children }: { selected: boolean; onClick: () => void; icon: ReactNode; title: string; description: string; children?: ReactNode }) {
+function OptionCard({
+  selected,
+  onClick,
+  icon,
+  title,
+  description,
+  children,
+  disabled,
+}: {
+  selected: boolean;
+  onClick: () => void;
+  icon: ReactNode;
+  title: string;
+  description: string;
+  children?: ReactNode;
+  disabled?: boolean;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={selected}
+      disabled={disabled}
       className={cn(
-        'group relative flex flex-col rounded-2xl border p-5 text-left transition-all duration-200',
+        'group relative flex flex-col rounded-2xl border p-5 text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50',
         selected ? 'border-brand-500/70 bg-brand-500/[0.07] shadow-[0_0_0_4px_rgba(37,99,255,0.12)]' : 'border-white/[0.08] bg-ink-900 hover:border-white/20 hover:bg-ink-850'
       )}
     >
@@ -63,8 +87,6 @@ const TYPE_ORDER: { id: ServiceType; title: string }[] = [
   { id: 'worker', title: 'Worker' },
 ];
 
-const SUGGESTED_REPOS = ['mehdi-f/syncbot', 'mehdi-f/welcome-bot', 'digitaly/community-api'];
-
 export function StepType({ s, patch }: { s: WizardState; patch: Patch }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2">
@@ -74,13 +96,7 @@ export function StepType({ s, patch }: { s: WizardState; patch: Patch }) {
           <OptionCard
             key={t.id}
             selected={s.type === t.id}
-            onClick={() =>
-              patch({
-                type: t.id,
-                port: t.id === 'api' || t.id === 'node' ? '3000' : '',
-                startCommand: t.id === 'worker' ? 'node worker.js' : t.id === 'discord' ? 'node index.js' : 'npm run start',
-              })
-            }
+            onClick={() => patch({ type: t.id, port: SERVICE_DEFAULTS[t.id].port ? String(SERVICE_DEFAULTS[t.id].port) : '', startCommand: SERVICE_DEFAULTS[t.id].startCommand })}
             icon={<T.icon />}
             title={t.title}
             description={T.description}
@@ -91,87 +107,208 @@ export function StepType({ s, patch }: { s: WizardState; patch: Patch }) {
   );
 }
 
-export function StepSource({ s, patch }: { s: WizardState; patch: Patch }) {
+/** Repository and branch pickers backed by the team's GitHub App installation. */
+function GithubSource({ s, patch, connection, onConnect }: { s: WizardState; patch: Patch; connection: GithubConnectionDto | null; onConnect: () => void }) {
+  const [q, setQ] = useState('');
+  const [search, setSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(q.trim()), 300);
+    return () => clearTimeout(t);
+  }, [q]);
+  const connected = connection?.connected ?? false;
+  const repos = useApi(() => api.github.repos(search || undefined), [search], { enabled: connected });
+  const repo = s.repo.trim();
+  const branches = useApi(() => api.github.branches(repo), [repo], { enabled: connected && /^[\w.-]+\/[\w.-]+$/.test(repo) });
+
+  return (
+    <div className="animate-fade-up space-y-4">
+      {connection && !connection.configured && (
+        <p className="flex items-start gap-2 rounded-xl border border-white/[0.08] px-3.5 py-2.5 text-sm text-ink-300">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" /> GitHub integration isn’t configured on this platform yet. Public repositories can still be deployed by name.
+        </p>
+      )}
+      {connection?.configured && !connected && (
+        <div className="flex flex-col gap-3 rounded-xl border border-white/[0.08] p-4 sm:flex-row sm:items-center">
+          <Github className="h-5 w-5 shrink-0 text-ink-300" />
+          <p className="flex-1 text-sm text-ink-300">Connect GitHub to pick a repository, deploy private code and redeploy on every push. Public repositories also work by name.</p>
+          <Button size="sm" onClick={onConnect} icon={<Github className="h-4 w-4" />}>
+            Connect GitHub
+          </Button>
+        </div>
+      )}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div className="sm:col-span-2">
+          <label className="label" htmlFor="wizard-repo">
+            Repository
+          </label>
+          <div className="relative">
+            <Github className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
+            <input
+              id="wizard-repo"
+              className="input pl-9"
+              placeholder="username/my-discord-bot"
+              list={connected ? 'wizard-repo-list' : undefined}
+              value={s.repo}
+              onChange={(e) => {
+                patch({ repo: e.target.value });
+                setQ(e.target.value);
+              }}
+            />
+            {connected && (
+              <datalist id="wizard-repo-list">
+                {(repos.data ?? []).map((r) => (
+                  <option key={r.fullName} value={r.fullName}>
+                    {r.private ? 'Private' : 'Public'} · default {r.defaultBranch}
+                  </option>
+                ))}
+              </datalist>
+            )}
+          </div>
+          {connected && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {repos.loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-ink-400" />}
+              {repos.error && <span className="text-xs text-danger-400">{repos.error}</span>}
+              {(repos.data ?? []).slice(0, 4).map((r) => (
+                <button
+                  key={r.fullName}
+                  type="button"
+                  onClick={() => patch({ repo: r.fullName, branch: r.defaultBranch })}
+                  className="rounded-lg border border-white/[0.07] px-2 py-1 font-mono text-[11px] text-ink-300 transition hover:border-white/20 hover:text-white"
+                >
+                  {r.fullName}
+                </button>
+              ))}
+              {connection && connection.accounts.length > 0 && <span className="self-center text-[11px] text-ink-500">via {connection.accounts.map((a) => a.login).join(', ')}</span>}
+            </div>
+          )}
+        </div>
+        <div>
+          <label className="label" htmlFor="wizard-branch">
+            Branch
+          </label>
+          <div className="relative">
+            <GitBranch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
+            <input id="wizard-branch" className="input pl-9" list={branches.data ? 'wizard-branch-list' : undefined} value={s.branch} onChange={(e) => patch({ branch: e.target.value })} />
+            {branches.data && (
+              <datalist id="wizard-branch-list">
+                {branches.data.map((b) => (
+                  <option key={b.name} value={b.name} />
+                ))}
+              </datalist>
+            )}
+          </div>
+          {branches.error && <p className="mt-1.5 text-xs text-danger-400">{branches.error}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Uploads the archive as soon as it is picked; the wizard keeps the resulting `uploadId`. */
+function UploadSource({ s, patch }: { s: WizardState; patch: Patch }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const abort = useRef<AbortController | null>(null);
   const [drag, setDrag] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => () => abort.current?.abort(), []);
+
+  const upload = async (f: File) => {
+    abort.current?.abort();
+    const ctl = new AbortController();
+    abort.current = ctl;
+    setError(null);
+    patch({ fileName: f.name, uploadId: null });
+    if (f.size > UPLOAD_LIMITS.defaultBytes) {
+      setError(`Archives can be at most ${Math.round(UPLOAD_LIMITS.defaultBytes / 1024 / 1024)} MB.`);
+      return;
+    }
+    setProgress(0);
+    try {
+      const up = await api.uploads.create(f, { onProgress: setProgress, signal: ctl.signal });
+      patch({ fileName: up.fileName, uploadId: up.id });
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
+      setError(errorMessage(e, 'The upload failed. Please try again.'));
+    } finally {
+      if (abort.current === ctl) setProgress(null);
+    }
+  };
+
+  return (
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDrag(true);
+      }}
+      onDragLeave={() => setDrag(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDrag(false);
+        const f = e.dataTransfer.files[0];
+        if (f) void upload(f);
+      }}
+      onClick={() => progress === null && fileRef.current?.click()}
+      className={cn(
+        'flex animate-fade-up cursor-pointer flex-col items-center rounded-2xl border-2 border-dashed p-10 text-center transition',
+        drag ? 'border-brand-500 bg-brand-500/[0.06]' : error ? 'border-danger-500/40' : 'border-white/10 hover:border-white/20'
+      )}
+    >
+      <input ref={fileRef} type="file" accept=".zip,.tar,.tar.gz,.tgz" className="hidden" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+      {progress !== null ? (
+        <div className="w-full max-w-xs">
+          <Loader2 className="mx-auto h-8 w-8 animate-spin text-brand-300" />
+          <p className="mt-3 font-mono text-sm text-white">{s.fileName}</p>
+          <ProgressBar value={progress * 100} className="mt-3" />
+          <p className="mt-1.5 text-xs text-ink-400">{progress < 1 ? `Uploading… ${Math.round(progress * 100)}%` : 'Checking the archive…'}</p>
+        </div>
+      ) : error ? (
+        <>
+          <XCircle className="h-8 w-8 text-danger-400" />
+          <p className="mt-3 text-sm text-danger-400">{error}</p>
+          <p className="mt-1 text-xs text-ink-400">Click to choose another file</p>
+        </>
+      ) : s.uploadId ? (
+        <>
+          <FileArchive className="h-8 w-8 text-brand-300" />
+          <p className="mt-3 font-mono text-sm text-white">{s.fileName}</p>
+          <p className="mt-1 flex items-center gap-1 text-xs text-success-400">
+            <Check className="h-3.5 w-3.5" /> Uploaded · click to replace
+          </p>
+        </>
+      ) : (
+        <>
+          <UploadCloud className="h-8 w-8 text-ink-400" />
+          <p className="mt-3 text-sm text-white">Drop your .zip or .tar.gz here or click to browse</p>
+          <p className="mt-1 text-xs text-ink-400">Max {Math.round(UPLOAD_LIMITS.defaultBytes / 1024 / 1024)} MB · leave node_modules out</p>
+        </>
+      )}
+    </div>
+  );
+}
+
+export function StepSource({ s, patch, connection, onConnectGithub, onRetryGithub }: { s: WizardState; patch: Patch; connection: GithubConnectionDto | null; onConnectGithub: () => void; onRetryGithub?: () => void }) {
   return (
     <div className="space-y-6">
       <div className="grid gap-3 sm:grid-cols-3">
         <OptionCard selected={s.source === 'github'} onClick={() => patch({ source: 'github' })} icon={<Github />} title="GitHub" description="Deploy from a repository. Auto-deploy on every push." />
-        <OptionCard selected={s.source === 'upload'} onClick={() => patch({ source: 'upload' })} icon={<UploadCloud />} title="Upload files" description="Upload a .zip of your project folder." />
+        <OptionCard selected={s.source === 'upload'} onClick={() => patch({ source: 'upload' })} icon={<UploadCloud />} title="Upload files" description="Upload a .zip or .tar.gz of your project folder." />
         <OptionCard selected={s.source === 'docker'} onClick={() => patch({ source: 'docker' })} icon={<Box />} title="Docker Image" description="Run any public image from a registry." />
       </div>
 
       {s.source === 'github' && (
-        <div className="grid animate-fade-up gap-4 sm:grid-cols-3">
-          <div className="sm:col-span-2">
-            <label className="label" htmlFor="wizard-repo">
-              Repository
-            </label>
-            <div className="relative">
-              <Github className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
-              <input id="wizard-repo" className="input pl-9" placeholder="username/my-discord-bot" value={s.repo} onChange={(e) => patch({ repo: e.target.value })} />
-            </div>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {SUGGESTED_REPOS.map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => patch({ repo: r })}
-                  className="rounded-lg border border-white/[0.07] px-2 py-1 font-mono text-[11px] text-ink-300 transition hover:border-white/20 hover:text-white"
-                >
-                  {r}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <label className="label" htmlFor="wizard-branch">
-              Branch
-            </label>
-            <div className="relative">
-              <GitBranch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
-              <input id="wizard-branch" className="input pl-9" value={s.branch} onChange={(e) => patch({ branch: e.target.value })} />
-            </div>
-          </div>
-        </div>
+        <>
+          <GithubSource s={s} patch={patch} connection={connection} onConnect={onConnectGithub} />
+          {!connection && onRetryGithub && (
+            <button type="button" onClick={onRetryGithub} className="flex items-center gap-1.5 text-xs text-ink-400 hover:text-white">
+              <RefreshCw className="h-3.5 w-3.5" /> Check the GitHub connection again
+            </button>
+          )}
+        </>
       )}
 
-      {s.source === 'upload' && (
-        <div
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDrag(true);
-          }}
-          onDragLeave={() => setDrag(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDrag(false);
-            const f = e.dataTransfer.files[0];
-            if (f) patch({ fileName: f.name });
-          }}
-          onClick={() => fileRef.current?.click()}
-          className={cn(
-            'flex animate-fade-up cursor-pointer flex-col items-center rounded-2xl border-2 border-dashed p-10 text-center transition',
-            drag ? 'border-brand-500 bg-brand-500/[0.06]' : 'border-white/10 hover:border-white/20'
-          )}
-        >
-          <input ref={fileRef} type="file" accept=".zip,.tar,.gz" className="hidden" onChange={(e) => e.target.files?.[0] && patch({ fileName: e.target.files[0].name })} />
-          {s.fileName ? (
-            <>
-              <FileArchive className="h-8 w-8 text-brand-300" />
-              <p className="mt-3 font-mono text-sm text-white">{s.fileName}</p>
-              <p className="mt-1 text-xs text-ink-400">Click to replace</p>
-            </>
-          ) : (
-            <>
-              <UploadCloud className="h-8 w-8 text-ink-400" />
-              <p className="mt-3 text-sm text-white">Drop your .zip here or click to browse</p>
-              <p className="mt-1 text-xs text-ink-400">Max 100 MB · node_modules is ignored</p>
-            </>
-          )}
-        </div>
-      )}
+      {s.source === 'upload' && <UploadSource s={s} patch={patch} />}
 
       {s.source === 'docker' && (
         <div className="animate-fade-up">
@@ -179,6 +316,7 @@ export function StepSource({ s, patch }: { s: WizardState; patch: Patch }) {
             Image
           </label>
           <input id="wizard-image" className="input font-mono" placeholder="ghcr.io/username/app:latest" value={s.dockerImage} onChange={(e) => patch({ dockerImage: e.target.value })} />
+          <p className="mt-1.5 text-xs text-ink-500">Public images only. Pin a tag or digest for reproducible deployments.</p>
         </div>
       )}
     </div>
@@ -223,6 +361,7 @@ export function StepConfigure({ s, patch, errors }: { s: WizardState; patch: Pat
               <option key={v}>{v}</option>
             ))}
           </select>
+          <FieldError message={errors.nodeVersion} />
         </div>
         <div>
           <label className="label" htmlFor="wizard-command">
@@ -274,6 +413,7 @@ export function StepConfigure({ s, patch, errors }: { s: WizardState; patch: Pat
                   type={e.secret ? 'password' : 'text'}
                   placeholder="value"
                   aria-label="Variable value"
+                  autoComplete="off"
                   value={e.value}
                   onChange={(ev) => setEnv(e.id, { value: ev.target.value })}
                 />
@@ -297,14 +437,19 @@ export function StepConfigure({ s, patch, errors }: { s: WizardState; patch: Pat
             </div>
           ))}
         </div>
+        <FieldError message={errors.env} />
       </div>
     </div>
   );
 }
 
-export function StepResources({ s, patch }: { s: WizardState; patch: Patch }) {
+export function StepResources({ s, patch, catalog }: { s: WizardState; patch: Patch; catalog: CatalogResponse | null }) {
   const plans = getServicePlans(s.type ?? 'node');
   const [notice, setNotice] = useState('');
+  const paidAvailable = catalog?.paidPlansAvailable ?? false;
+  // Regions with a healthy server and free capacity right now (from the API catalog).
+  const available = new Set((catalog?.regions ?? []).filter((r) => r.available).map((r) => r.id));
+  const firstAvailable = (plan: PlanId) => (catalog?.regions ?? []).find((r) => r.available && isRegionAllowed(r, plan))?.id ?? DEFAULT_REGION.id;
 
   const choosePlan = (plan: PlanId) => {
     const current = getRegion(s.region) ?? DEFAULT_REGION;
@@ -312,19 +457,26 @@ export function StepResources({ s, patch }: { s: WizardState; patch: Patch }) {
       patch({ plan });
       setNotice('');
     } else {
-      patch({ plan, region: DEFAULT_REGION.id });
-      setNotice(`${current.city} isn’t included in this plan, so your service will run in ${DEFAULT_REGION.city} instead.`);
+      const fallback = getRegion(firstAvailable(plan)) ?? DEFAULT_REGION;
+      patch({ plan, region: fallback.id });
+      setNotice(`${current.city} isn’t included in this plan, so your service will run in ${fallback.city} instead.`);
     }
   };
 
   return (
     <div className="space-y-10">
+      {!paidAvailable && (
+        <p className="flex items-start gap-2 rounded-xl border border-white/[0.08] px-3.5 py-2.5 text-sm text-ink-300">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" /> Paid plans can’t be purchased on this platform yet. You can start on Free and upgrade later.
+        </p>
+      )}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {plans.map((p) => (
           <OptionCard
             key={p.id}
             selected={s.plan === p.id}
             onClick={() => choosePlan(p.id)}
+            disabled={p.priceCents > 0 && !paidAvailable}
             icon={<span className="text-sm font-semibold">{p.name[0]}</span>}
             title={p.name}
             description={p.price === 0 ? 'Free' : `€${p.price}/month`}
@@ -353,13 +505,19 @@ export function StepResources({ s, patch }: { s: WizardState; patch: Patch }) {
             plan={s.plan}
             plans={plans}
             value={s.region}
+            available={catalog ? available : null}
             onSelect={(r) => {
               patch({ region: r.id });
               setNotice('');
             }}
             onUpgrade={(r) => {
+              const required = plans.find((p) => p.id === r.minPlan);
+              if (required && required.priceCents > 0 && !paidAvailable) {
+                setNotice(`${r.city} needs the ${required.name} plan, which can’t be purchased yet.`);
+                return;
+              }
               patch({ plan: r.minPlan, region: r.id });
-              const name = plans.find((p) => p.id === r.minPlan)?.name ?? r.minPlan;
+              const name = required?.name ?? r.minPlan;
               setNotice(`${r.city} needs the ${name} plan, so we switched you to ${name}. You can still pick another plan above.`);
             }}
           />

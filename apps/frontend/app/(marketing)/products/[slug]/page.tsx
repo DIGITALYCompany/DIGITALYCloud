@@ -57,9 +57,15 @@ export default async function ProductPage({ params }: PageProps<'/products/[slug
             </h1>
             <p className="mt-6 max-w-xl text-lg text-ink-300">{p.description}</p>
             <div className="mt-9 flex flex-col gap-3 sm:flex-row">
-              <ButtonLink href="/signup" size="lg" icon={<Rocket className="h-4 w-4" />}>
-                Deploy now
-              </ButtonLink>
+              {p.deployable ? (
+                <ButtonLink href="/signup" size="lg" icon={<Rocket className="h-4 w-4" />}>
+                  Deploy now
+                </ButtonLink>
+              ) : (
+                <ButtonLink href="/contact" size="lg" icon={<Rocket className="h-4 w-4" />}>
+                  Coming soon · get notified
+                </ButtonLink>
+              )}
               <ButtonLink href={`/docs/${p.docs}`} size="lg" variant="outline" icon={<BookOpen className="h-4 w-4" />}>
                 Read the docs
               </ButtonLink>
@@ -113,7 +119,7 @@ export default async function ProductPage({ params }: PageProps<'/products/[slug
       <section className="mx-auto max-w-7xl px-4 py-24 sm:px-6 lg:px-8">
         <SectionHeading eyebrow="Pricing" title={`${p.name} plans`} description="Fixed monthly prices, VAT included. Upgrade or downgrade any time." />
         <div className="mt-14">
-          <PlanCards plans={p.plans} />
+          <PlanCards plans={p.plans} deployable={p.deployable} />
         </div>
         <p className="mt-8 text-center text-sm text-ink-400">
           Need more?{' '}

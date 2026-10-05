@@ -1,13 +1,30 @@
 'use client';
 
 import { useState } from 'react';
-import { CheckCircle2, ChevronDown, Wrench } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, HelpCircle, Wrench, XCircle } from 'lucide-react';
+import type { StatusComponentDto, StatusResponse } from '@digitalycloud/shared';
 import { Badge } from '@/components/ui/badge';
-import type { Incident, StatusComponent } from '@/data/status';
 import { cn } from '@/lib/utils';
 import { UptimeBars } from './uptime-bars';
 
-export function ComponentGroup({ name, components }: { name: string; components: StatusComponent[] }) {
+type Incident = StatusResponse['incidents'][number];
+
+const STATE: Record<StatusComponentDto['state'], { tone: 'success' | 'warning' | 'danger' | 'brand' | 'neutral'; label: string; text: string }> = {
+  ok: { tone: 'success', label: 'Operational', text: 'text-success-400' },
+  maintenance: { tone: 'brand', label: 'Maintenance', text: 'text-brand-300' },
+  degraded: { tone: 'warning', label: 'Degraded', text: 'text-warning-400' },
+  outage: { tone: 'danger', label: 'Outage', text: 'text-danger-400' },
+  unknown: { tone: 'neutral', label: 'No data yet', text: 'text-ink-400' },
+};
+
+function worst(components: StatusComponentDto[]): StatusComponentDto['state'] {
+  const order: StatusComponentDto['state'][] = ['outage', 'degraded', 'maintenance', 'ok', 'unknown'];
+  return order.find((s) => components.some((c) => c.state === s)) ?? 'unknown';
+}
+
+export function ComponentGroup({ name, components, observedDays }: { name: string; components: StatusComponentDto[]; observedDays: number }) {
+  const groupState = STATE[worst(components)];
+  const GroupIcon = groupState.tone === 'success' ? CheckCircle2 : groupState.tone === 'danger' ? XCircle : groupState.tone === 'neutral' ? HelpCircle : AlertTriangle;
   const [open, setOpen] = useState(true);
   return (
     <div className="overflow-hidden rounded-3xl border border-white/[0.07] bg-ink-900/60">
@@ -17,8 +34,8 @@ export function ComponentGroup({ name, components }: { name: string; components:
           <span className="font-medium text-white">{name}</span>
           <span className="text-xs text-ink-500">{components.length} components</span>
         </span>
-        <span className="flex items-center gap-1.5 text-sm text-success-400">
-          <CheckCircle2 className="h-4 w-4" /> <span className="hidden sm:inline">Operational</span>
+        <span className={cn('flex items-center gap-1.5 text-sm', groupState.text)}>
+          <GroupIcon className="h-4 w-4" /> <span className="hidden sm:inline">{groupState.label}</span>
         </span>
       </button>
       {open && (
@@ -31,11 +48,11 @@ export function ComponentGroup({ name, components }: { name: string; components:
                   <p className="truncate text-xs text-ink-400">{c.desc}</p>
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
-                  <span className="font-mono text-xs text-ink-300">{c.uptime.toFixed(2)}%</span>
-                  <Badge tone="success">Operational</Badge>
+                  <span className="font-mono text-xs text-ink-300">{c.uptime === null ? '—' : `${c.uptime.toFixed(2)}%`}</span>
+                  <Badge tone={STATE[c.state].tone}>{STATE[c.state].label}</Badge>
                 </div>
               </div>
-              <UptimeBars component={c} />
+              <UptimeBars component={c} observedDays={observedDays} />
               <div className="mt-2 flex justify-between text-[11px] text-ink-500">
                 <span>
                   <span className="sm:hidden">45</span>
@@ -67,14 +84,14 @@ export function IncidentCard({ incident }: { incident: Incident }) {
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="text-ink-400">{incident.date}</span>
           <Badge tone={impact.tone}>{impact.label}</Badge>
-          <Badge tone="success">{latest.stage}</Badge>
+          {latest && <Badge tone={latest.stage === 'Resolved' || latest.stage === 'Completed' ? 'success' : 'warning'}>{latest.stage}</Badge>}
           <span className="text-ink-500">· {incident.duration}</span>
         </div>
         <p className="mt-3 flex items-center gap-2 font-medium text-white">
           {incident.impact === 'maintenance' && <Wrench className="h-4 w-4 text-brand-300" />}
           {incident.title}
         </p>
-        <p className="mt-1 text-sm leading-6 text-ink-300">{latest.text}</p>
+        {latest && <p className="mt-1 text-sm leading-6 text-ink-300">{latest.text}</p>}
         <div className="mt-3 flex flex-wrap gap-1.5">
           {incident.affected.map((a) => (
             <span key={a} className="rounded-md bg-white/[0.04] px-2 py-0.5 text-[11px] text-ink-300 ring-1 ring-white/[0.06]">

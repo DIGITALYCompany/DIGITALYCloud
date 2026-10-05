@@ -3,12 +3,14 @@
 import { useState, type FormEvent } from 'react';
 import { Building2, CheckCircle2, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { CONTACT_TOPICS, type ContactTopic } from '@digitalycloud/shared';
 import { useToast } from '@/providers/toast-provider';
+import { api, errorMessage } from '@/lib/api';
 import { isValidEmail } from '@/lib/validation';
 
-const TOPICS = ['Sales & dedicated resources', 'Technical question', 'Billing', 'Partnership', 'Press'];
+const TOPICS = CONTACT_TOPICS;
 
-const EMPTY = { name: '', email: '', company: '', topic: TOPICS[0], message: '' };
+const EMPTY = { name: '', email: '', company: '', topic: TOPICS[0] as ContactTopic, message: '', website: '' };
 
 export function ContactForm() {
   const toast = useToast();
@@ -21,11 +23,15 @@ export function ContactForm() {
     e.preventDefault();
     if (!valid) return;
     setBusy(true);
-    // No backend yet: simulate the request round-trip.
-    await new Promise((r) => setTimeout(r, 900));
-    setBusy(false);
-    setSent(true);
-    toast({ kind: 'success', title: 'Message sent', description: 'We usually reply within one business day.' });
+    try {
+      await api.support.contact({ name: form.name.trim(), email: form.email.trim(), company: form.company.trim() || undefined, topic: form.topic, message: form.message.trim(), website: form.website });
+      setSent(true);
+      toast({ kind: 'success', title: 'Message sent', description: 'We usually reply within one business day.' });
+    } catch (err) {
+      toast({ kind: 'error', title: 'Message not sent', description: errorMessage(err) });
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -50,6 +56,8 @@ export function ContactForm() {
         </div>
       ) : (
         <form onSubmit={submit} className="space-y-4">
+          {/* Honeypot for bots: hidden from people and assistive technology. */}
+          <input type="text" name="website" tabIndex={-1} autoComplete="off" aria-hidden className="hidden" value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} />
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className="label" htmlFor="contact-name">
@@ -78,7 +86,7 @@ export function ContactForm() {
               <label className="label" htmlFor="contact-topic">
                 Topic
               </label>
-              <select id="contact-topic" className="input" value={form.topic} onChange={(e) => setForm({ ...form, topic: e.target.value })}>
+              <select id="contact-topic" className="input" value={form.topic} onChange={(e) => setForm({ ...form, topic: e.target.value as ContactTopic })}>
                 {TOPICS.map((t) => (
                   <option key={t}>{t}</option>
                 ))}

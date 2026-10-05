@@ -1,7 +1,12 @@
 # 04 — Data models
 
-The UI's types live in `apps/frontend/lib/types.ts`. The API must return **these exact field names** (camelCase), with timestamps as **epoch milliseconds**.
-For each entity below: the existing fields (✅ already in `lib/types.ts`), the fields the backend should add (➕ **Proposed**), and who owns each value.
+> **Implemented.** The wire DTOs now live in `packages/shared/src/types.ts` (the UI's `lib/types.ts` aliases them) and the
+> storage model is MongoDB (see [MongoDB collections](#mongodb-collections-implemented) below and
+> [backend-decisions.md](backend-decisions.md)). The tables below remain the field-level reference; fields marked ➕ were
+> added as proposed. Node.js versions are now `24 LTS` (default) and `22 LTS`; `20 LTS` and `18` are end-of-life.
+
+The API returns **these exact field names** (camelCase), with timestamps as **epoch milliseconds**.
+For each entity below: the original UI fields (✅), the fields the backend added (➕), and who owns each value.
 
 **Owner** column: **server** = computed or controlled by the backend, never accepted from the client. **client** = editable by the user, so validate it.
 
@@ -13,7 +18,7 @@ type ServiceStatus    = 'running' | 'stopped' | 'deploying' | 'failed';
 type PlanId           = 'free' | 'starter' | 'pro' | 'business';        // ordered: index = plan level
 type SourceType       = 'github' | 'upload' | 'docker';
 type DeploymentStatus = 'building' | 'success' | 'failed';
-type NodeVersion      = '22 LTS' | '20 LTS' | '18';                     // lib/catalog.ts NODE_VERSIONS
+type NodeVersion      = '24 LTS' | '22 LTS' | '20 LTS' | '18';          // deployable: 24 LTS, 22 LTS (shared NODE_VERSIONS)
 type ApiKeyScope      = 'read' | 'full';
 type NotificationKind = 'success' | 'warning' | 'info' | 'error';
 type LogLevel         = 'info' | 'warn' | 'error' | 'success' | 'debug';
@@ -216,7 +221,7 @@ Values are listed in [01-project-overview.md](01-project-overview.md#plans-per-s
 
 ---
 
-## New entities (not in `lib/types.ts` yet, Proposed)
+## Entities added by the backend
 
 ```ts
 interface Session {              // Settings → Security → Active sessions
@@ -283,282 +288,24 @@ interface GithubRepo { fullName: string; defaultBranch: string; private: boolean
 
 ---
 
-## Proposed database schema (PostgreSQL)
+## MongoDB collections (implemented)
 
-Conventions: `text` primary keys with prefixed random ids (`usr_`, `team_`, `dep_`, `env_`, `key_`, `ntf_`, `ses_`, `inv_`, `tkt_`, `upl_`). The exception is `services.id`, which **is** the public slug.
-Store `timestamptz` and serialise it to epoch ms in the API layer. Store money in **cents**.
+The relational proposal that used to be here was replaced by MongoDB (project requirement). Models are in
+`apps/backend/src/db/models/`; indexes are created by `npm run db:migrate` and checked by `cli indexes verify`.
 
-```sql
--- Accounts --------------------------------------------------------------------
-create extension if not exists citext;
+| Area | Collections | Notes |
+| ---- | ----------- | ----- |
+| Identity | `users`, `sessions`, `auth_tokens`, `auth_challenges`, `oauth_states`, `oauth_identities` | Token hashes only; TTL indexes expire sessions/tokens; TOTP secrets encrypted. |
+| Teams | `teams`, `memberships`, `invitations` | Unique `(teamId, userId)`; partial unique index allows one owner per team; one pending invitation per email. |
+| Hosting | `services`, `slug_reservations`, `env_vars`, `deployments`, `deployment_logs`, `runtime_logs`, `metric_samples`, `usage_alert_states` | Service `_id` = slug; one `building` deployment per service (partial unique); env values AES-256-GCM. |
+| Infrastructure | `servers`, `capacity_reservations`, `server_metric_samples`, `github_installations`, `uploads` | Capacity reserved with conditional atomic updates. |
+| Product | `api_keys`, `notifications`, `support_tickets`, `contact_messages`, `doc_feedback`, `email_deliveries` | Key hashes; notifications deduplicated by `(userId, dedupeKey)`. |
+| Billing | `billing_accounts`, `subscription_items`, `invoices`, `billing_operations`, `webhook_receipts` | Money in integer cents; receipts unique per provider event id. |
+| Reliability | `outbox`, `idempotency_records`, `counters`, `audit_events`, `account_deletions`, `migration_ledger` | Transactional outbox → BullMQ; idempotency replays; atomic sequences. |
+| Status | `availability_samples`, `incidents`, `maintenance_windows`, `revenue_snapshots` | Only real observations and published incidents. |
 
-create table users (
-  id                text primary key,
-  name              text not null,
-  email             citext not null unique,
-  password_hash     text,                                -- null for Google-only accounts (argon2id)
-  role              text not null default 'user' check (role in ('user','admin')),
-  language          text not null default 'en' check (language in ('en','fr')),
-  timezone          text not null default 'Europe/Paris',
-  totp_secret_enc   bytea,                               -- null = 2FA disabled
-  email_verified_at timestamptz,
-  created_at        timestamptz not null default now(),
-  deletion_requested_at timestamptz                      -- purge job deletes after 24 h
-);
-
-create table oauth_accounts (
-  provider          text not null check (provider in ('google','github')),
-  provider_user_id  text not null,
-  user_id           text not null references users(id) on delete cascade,
-  primary key (provider, provider_user_id)
-);
-
-create table sessions (
-  id            text primary key,                        -- ses_…
-  token_hash    text not null unique,                    -- sha256 of the cookie value
-  user_id       text not null references users(id) on delete cascade,
-  user_agent    text,
-  ip            inet,
-  location      text,
-  remember      boolean not null default true,
-  created_at    timestamptz not null default now(),
-  last_seen_at  timestamptz not null default now(),
-  expires_at    timestamptz not null
-);
-
-create table password_reset_tokens (
-  token_hash  text primary key,
-  user_id     text not null references users(id) on delete cascade,
-  expires_at  timestamptz not null,                      -- 1 hour
-  used_at     timestamptz
-);
-
-create table notification_preferences (
-  user_id         text primary key references users(id) on delete cascade,
-  deploy_fail     boolean not null default true,
-  deploy_success  boolean not null default false,
-  crash           boolean not null default true,
-  usage           boolean not null default true,
-  billing         boolean not null default true,
-  product         boolean not null default false
-);
-
--- Teams (an "account" that owns services and billing) -------------------------
-create table teams (
-  id                  text primary key,
-  name                text not null,
-  stripe_customer_id  text unique,
-  created_at          timestamptz not null default now()
-);
-
-create table team_members (
-  team_id     text not null references teams(id) on delete cascade,
-  user_id     text not null references users(id) on delete cascade,
-  role        text not null check (role in ('owner','admin','developer','viewer')),
-  joined_at   timestamptz not null default now(),
-  primary key (team_id, user_id)
-);
-create unique index one_owner_per_team on team_members (team_id) where role = 'owner';
-
-create table team_invitations (
-  id          text primary key,
-  team_id     text not null references teams(id) on delete cascade,
-  email       citext not null,
-  role        text not null check (role in ('admin','developer','viewer')),
-  token_hash  text not null unique,
-  invited_by  text references users(id) on delete set null,
-  created_at  timestamptz not null default now(),
-  expires_at  timestamptz not null,                      -- 7 days
-  accepted_at timestamptz,
-  unique (team_id, email)
-);
-
--- Infrastructure ---------------------------------------------------------------
-create table servers (
-  id          text primary key,                          -- 'lyon-01'
-  name        text not null,                             -- 'Lyon-01'
-  region_id   text not null,                             -- 'lyon'
-  status      text not null check (status in ('healthy','degraded','maintenance')),
-  ip          inet not null,
-  cores       int not null,
-  memory_gb   int not null,
-  disk_tb     numeric(5,1) not null,
-  docker_host text not null,                             -- e.g. tcp://10.0.0.10:2376 (never exposed)
-  booted_at   timestamptz
-);
-
-create table uploads (
-  id           text primary key,
-  team_id      text not null references teams(id) on delete cascade,
-  file_name    text not null,
-  size_bytes   bigint not null,
-  storage_key  text not null,                            -- path in object storage
-  created_at   timestamptz not null default now()
-);
-
-create table github_installations (
-  id               text primary key,
-  team_id          text not null references teams(id) on delete cascade,
-  installation_id  bigint not null unique,
-  account_login    text not null
-);
-
--- Services ---------------------------------------------------------------------
-create table services (
-  id              text primary key,                      -- public slug, immutable, globally unique
-  team_id         text not null references teams(id) on delete cascade,
-  name            text not null,
-  type            text not null check (type in ('discord','node','api','worker')),
-  status          text not null check (status in ('running','stopped','deploying','failed')),
-  plan            text not null check (plan in ('free','starter','pro','business')),
-  region_id       text not null,
-  server_id       text references servers(id),
-  source          text not null check (source in ('github','upload','docker')),
-  repo            text not null,
-  branch          text,
-  upload_id       text references uploads(id),
-  github_installation_id text references github_installations(id),
-  node_version    text not null default '22 LTS',
-  start_command   text not null,
-  port            int check (port between 1 and 65535),
-  auto_deploy     boolean not null default true,
-  auto_restart    boolean not null default false,
-  container_id    text,                                  -- current running container (never exposed)
-  storage_mb      int not null default 0,
-  started_at      timestamptz,
-  last_deploy_at  timestamptz,
-  stripe_subscription_item_id text,
-  created_at      timestamptz not null default now()
-);
-create unique index services_team_name on services (team_id, lower(name));
-
-create table env_vars (
-  id          text primary key,
-  service_id  text not null references services(id) on delete cascade,
-  key         text not null check (key ~ '^[A-Z_][A-Z0-9_]*$'),
-  value_enc   bytea not null,                            -- AES-256-GCM (iv + tag + ciphertext)
-  secret      boolean not null default true,
-  updated_at  timestamptz not null default now(),
-  unique (service_id, key)
-);
-
-create table deployments (
-  id              text primary key,
-  service_id      text not null references services(id) on delete cascade,
-  number          int not null,
-  environment     text not null default 'Production',
-  status          text not null check (status in ('building','success','failed')),
-  stage           text check (stage in ('preparing','pulling','installing','starting','health_check')),
-  trigger         text not null check (trigger in ('initial','manual','git_push','api','rollback')),
-  commit          text not null,
-  commit_message  text not null,
-  author          text not null,
-  image_ref       text,                                  -- built image, reused for rollbacks
-  rollback_of     text references deployments(id),
-  created_at      timestamptz not null default now(),
-  finished_at     timestamptz,
-  unique (service_id, number)
-);
-
-create table deployment_logs (
-  deployment_id  text not null references deployments(id) on delete cascade,
-  line_no        int not null,
-  text           text not null,
-  primary key (deployment_id, line_no)
-);
-
--- Time series (v1 in Postgres; move to TimescaleDB/ClickHouse/Loki when volume grows)
-create table service_metrics (
-  service_id  text not null references services(id) on delete cascade,
-  ts          timestamptz not null,
-  cpu         real not null,
-  ram_mb      int not null,
-  net_in      real not null,
-  net_out     real not null,
-  disk_mb     int not null,
-  primary key (service_id, ts)
-);                                                       -- 1 sample/min, keep 30 days
-
-create table service_logs (
-  service_id  text not null references services(id) on delete cascade,
-  id          bigint not null,                           -- LogLine.id (monotonic per service)
-  ts          timestamptz not null,
-  level       text not null check (level in ('info','warn','error','success','debug')),
-  text        text not null,
-  primary key (service_id, id)
-);                                                       -- retention by plan (free: current deployment only)
-
--- Account features ------------------------------------------------------------
-create table api_keys (
-  id            text primary key,
-  team_id       text not null references teams(id) on delete cascade,
-  created_by    text references users(id) on delete set null,
-  name          text not null,
-  prefix        text not null,                           -- first 13 chars, shown in UI
-  secret_hash   text not null unique,                    -- sha256(secret)
-  scope         text not null check (scope in ('read','full')),
-  created_at    timestamptz not null default now(),
-  last_used_at  timestamptz
-);
-
-create table notifications (
-  id          text primary key,
-  user_id     text not null references users(id) on delete cascade,
-  service_id  text references services(id) on delete set null,
-  kind        text not null check (kind in ('success','warning','info','error')),
-  title       text not null,
-  body        text not null,
-  read_at     timestamptz,
-  created_at  timestamptz not null default now()
-);
-create index on notifications (user_id, created_at desc);
-
-create table invoices (
-  id                 text primary key,
-  team_id            text not null references teams(id) on delete cascade,
-  number             text not null unique,
-  date               date not null,
-  amount_cents       int not null,
-  currency           text not null default 'EUR',
-  status             text not null check (status in ('paid','pending','failed')),
-  summary            text not null,                      -- -> Invoice.plan
-  stripe_invoice_id  text unique,
-  pdf_url            text
-);
-
-create table support_tickets (
-  id          text primary key,
-  number      serial unique,
-  team_id     text not null references teams(id) on delete cascade,
-  user_id     text not null references users(id),
-  service_id  text references services(id) on delete set null,
-  subject     text not null,
-  priority    text not null check (priority in ('low','normal','high')),
-  message     text not null,
-  status      text not null default 'open' check (status in ('open','pending','closed')),
-  created_at  timestamptz not null default now()
-);
-
-create table contact_messages (
-  id          text primary key,
-  name        text not null,
-  email       citext not null,
-  company     text,
-  topic       text not null,
-  message     text not null,
-  ip          inet,
-  created_at  timestamptz not null default now()
-);
-
-create table doc_feedback (
-  slug        text not null,
-  vote        text not null check (vote in ('up','down')),
-  created_at  timestamptz not null default now()
-);
-```
-
-Every user gets a **personal team** at signup (they are its `owner`). Services, API keys, billing, invoices and tickets belong to the **team**. Notifications and preferences belong to the **user**.
-How the UI picks the active team (team switcher) is still open. See [08](08-roadmap-and-open-questions.md).
+Conventions: string ids with a type prefix (`usr_…`, `team_…`, `dep_…`), BSON dates (epoch ms on the wire), no `_id`/`__v`
+in responses, `strict: 'throw'` schemas. Full index list and retention periods: [backend-decisions.md §1](backend-decisions.md#1-mongodb-instead-of-postgresql).
 
 ## Validation rules (mirror the UI, enforce on the server)
 

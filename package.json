@@ -1,21 +1,26 @@
 {
   "name": "digitalycloud",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
+  "private": true,
+  "description": "DIGITALYCloud monorepo: Next.js frontend, Express/MongoDB backend and shared contracts.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/DIGITALYCompany/DIGITALYCloud.git"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/DIGITALYCompany/DIGITALYCloud/issues"
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.12.0"
   },
-  "homepage": "https://github.com/DIGITALYCompany/DIGITALYCloud#readme"
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev --workspace backend",
+    "dev:worker": "npm run dev:worker --workspace backend",
+    "dev:web": "npm run dev --workspace frontend",
+    "build": "npm run build --workspace backend && npm run build --workspace frontend",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  }
 }

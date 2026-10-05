@@ -79,12 +79,17 @@ function ConfirmBody({
   setBusy,
 }: Omit<ConfirmProps, 'open'> & { busy: boolean; setBusy: (busy: boolean) => void }) {
   const [typed, setTyped] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
+  // A failed action keeps the dialog open and shows the reason.
   const run = async () => {
     setBusy(true);
+    setError(null);
     try {
       await onConfirm();
       onClose();
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : 'Something went wrong. Please try again.');
     } finally {
       setBusy(false);
     }
@@ -112,6 +117,7 @@ function ConfirmBody({
                 <input className="input font-mono" value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus />
               </div>
             )}
+            {error && <p className="mt-3 text-sm text-danger-400">{error}</p>}
           </div>
         </div>
       </div>

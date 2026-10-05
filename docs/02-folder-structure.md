@@ -5,17 +5,19 @@
 ```
 DIGITALYCloud/
 ├── apps/
-│   ├── backend/            Express API (not implemented yet; only package.json)
-│   └── frontend/           Next.js app: marketing site, docs, status page, auth, dashboard
-├── docs/                   ← you are here: project + API + integration documentation
-├── .gitignore              node_modules, .env*, .next, dist, build, logs, .DS_Store, .vercel
-├── package.json            Root manifest (no workspaces, no scripts yet)
-├── package-lock.json       Empty root lockfile (untracked)
-└── README.md               One-line title
+│   ├── backend/            Express 5 API, workers and collectors (MongoDB, Redis, Docker, Stripe)
+│   └── frontend/           Next.js 16 app: marketing site, docs, status page, auth, dashboard
+├── packages/
+│   └── shared/             @digitalycloud/shared: enums, catalog, validation, permissions, API DTOs (used by both apps)
+├── docs/                   ← you are here: project, API, integration and operations documentation
+├── .github/workflows/ci.yml  Typecheck, lint and build all workspaces; build the backend image
+├── compose.yaml            Local MongoDB replica set, Redis, Mailpit (+ MinIO, Traefik, app profiles)
+├── package.json            npm workspaces (packages/*, apps/*) and root scripts
+└── package-lock.json       The only lockfile
 ```
 
-There are **no npm workspaces**, so each app installs and runs on its own (`cd apps/frontend && npm install`).
-**Proposed:** add `"workspaces": ["apps/*", "packages/*"]` once a shared types package exists (see [backend guide](06-backend-guide.md#shared-types)).
+Install once at the root (`npm install`); run scripts per workspace (`npm run dev --workspace backend`) or with the root
+shortcuts `npm run dev:api`, `dev:worker`, `dev:web`, `typecheck`, `lint`, `build`.
 
 ---
 
@@ -41,7 +43,7 @@ apps/frontend/
 │   │   ├── pricing/page.tsx               /pricing            (data/products.ts)
 │   │   ├── products/page.tsx              /products
 │   │   ├── products/[slug]/page.tsx       /products/:slug     (discord-bots, game-servers, nodejs, apis, workers, websites)
-│   │   ├── status/page.tsx                /status             (data/status.ts)
+│   │   ├── status/page.tsx                /status             (Server Component, GET /status every 60 s)
 │   │   └── not-found.tsx
 │   │
 │   ├── (auth)/                            Login/signup pages. Layout = split screen with brand panel.
@@ -118,38 +120,40 @@ apps/frontend/
 │   ├── site.ts                            Site name, title, description, URL, OG image
 │   └── navigation.ts                      Public nav, footer, dashboard sidebar, mobile bar, account menus
 │
-├── data/                                  Static content and demo seed data
-│   ├── products.ts                        6 products with plans/prices/specs (source of plan catalog)
-│   ├── regions.ts                         11 regions, minPlan rules, helpers (regionLabel, isRegionAllowed, serverFor)
-│   ├── seed.ts                            Demo user, 3 services, deployments, servers, invoices, API keys, notifications, admin rows
-│   ├── status.ts                          Status components, incidents, maintenance
+├── data/                                  Static marketing content
+│   ├── products.ts                        6 products (marketing copy; plans match the shared catalog; 2 are "Coming soon")
+│   ├── regions.ts                         Re-exports the shared region catalog
 │   ├── changelog.ts  legal.ts
 │   └── docs/                              Documentation articles (guides, platform, best-practices) + catalog/sections/headings
 │
 ├── hooks/
-│   ├── use-live-series.ts                 Rolling chart series (random samples every N ms)
-│   ├── use-service-logs.ts                Simulated log stream
+│   ├── use-api.ts                         Load-on-mount helper (loading/error/reload)
+│   ├── use-service-logs.ts                Runtime log tail over SSE with resume and history
+│   ├── use-deployment-logs.ts             Build log + live deployment.log events
+│   ├── use-system-status.ts               Current platform status for badges
 │   ├── use-hydrated.ts  use-click-outside.ts
 │
 ├── lib/
 │   ├── api/
-│   │   ├── index.ts                       ★ The single data-access entry point: `export { api } from './mock-api'`
-│   │   └── mock-api.ts                    ★ Fake backend (localStorage). THE CONTRACT the real API must match.
-│   ├── types.ts                           ★ Shared domain types (User, Service, Deployment, EnvVar, ApiKey, …)
-│   ├── catalog.ts                         Plans per service type, SERVICE_TYPES, NODE_VERSIONS, monthlyTotal()
-│   ├── simulation.ts                      Deterministic fake charts and logs (to be removed when real data exists)
-│   ├── validation.ts                      isValidEmail, safeRedirectPath
+│   │   ├── index.ts                       ★ `api`: every endpoint, typed with the shared DTOs
+│   │   ├── http-client.ts                 ★ fetch wrapper: cookies, CSRF bootstrap/retry, X-Team-Id, ApiError, upload progress
+│   │   ├── events.ts                      ★ One shared /events EventSource per tab (resync/revoked handling)
+│   │   └── server.ts                      Server-side fetch for Server Components (status page)
+│   ├── types.ts                           UI types = shared DTOs (User, Service, Deployment, …)
+│   ├── catalog.ts                         Shared plans + SERVICE_TYPES icons, monthlyTotal()
+│   ├── validation.ts                      Re-exports shared isValidEmail, safeRedirectPath
 │   ├── format.ts                          formatUptime, timeAgo, formatEuro, slugify, uid…
 │   ├── routes.ts  browser.ts  toast-events.ts  utils.ts
 │
+├── proxy.ts                               Optimistic login redirect for dashboard routes (Next.js 16 Proxy)
 ├── providers/
 │   ├── app-providers.tsx                  <ToastProvider><AuthProvider>
-│   ├── auth-provider.tsx                  useAuth(): user, login, signup, logout, updateProfile…
-│   ├── cloud-provider.tsx                 useCloud(): services, deployments, notifications + actions
+│   ├── auth-provider.tsx                  useAuth(): user, teams, per-tab team, login (2FA), signup, logout, can(action)…
+│   ├── cloud-provider.tsx                 useCloud(): team services/deployments/notifications/catalog + SSE + actions
 │   └── toast-provider.tsx                 useToast()
 │
 ├── public/DIGITALYCloud_Logo.png
-├── .env.example                           NEXT_PUBLIC_SITE_URL
+├── .env.example                           NEXT_PUBLIC_SITE_URL, NEXT_PUBLIC_API_URL (+ server-only API_INTERNAL_URL, AUTH_PROXY_GUARD)
 ├── next.config.ts                         typedRoutes, /app → /dashboard redirect
 ├── components.json                        shadcn/ui config
 ├── eslint.config.mjs  postcss.config.mjs  tsconfig.json (alias @/* → ./*)
@@ -161,83 +165,41 @@ apps/frontend/
 
 ---
 
-## `apps/backend/` (target layout, Proposed)
+## `apps/backend/`
 
-Today the folder only has `package.json` (`express@^5.2.1`, CommonJS, no scripts). Below is the recommended structure. The reasoning is in [06-backend-guide.md](06-backend-guide.md).
+Details and commands: [apps/backend/README.md](../apps/backend/README.md). Design: [backend-decisions.md](backend-decisions.md).
 
 ```
 apps/backend/
 ├── src/
-│   ├── server.ts                    Starts the HTTP server (reads PORT)
-│   ├── app.ts                       Builds the Express app: middleware → routes → error handler
-│   ├── config/
-│   │   └── env.ts                   Loads + validates environment variables (Zod). Crash on missing values.
-│   ├── db/
-│   │   ├── client.ts                Prisma/Drizzle client
-│   │   └── seed.ts                  Dev seed (mirror of apps/frontend/data/seed.ts)
-│   ├── catalog/
-│   │   ├── plans.ts                 Plan table per service type (must match apps/frontend/lib/catalog.ts)
-│   │   └── regions.ts               Regions + minPlan (must match apps/frontend/data/regions.ts)
-│   ├── middleware/
-│   │   ├── authenticate.ts          Session cookie OR Bearer API key → req.auth
-│   │   ├── require-auth.ts          401 if not signed in
-│   │   ├── require-team-role.ts     403 unless Owner/Admin/Developer/Viewer as needed
-│   │   ├── require-platform-admin.ts  403 unless User.role === 'admin'
-│   │   ├── require-scope.ts         API keys: 'read' = GET only, 'full' = writes
-│   │   ├── validate.ts              Zod body/query/params validation → 400 VALIDATION_ERROR
-│   │   ├── rate-limit.ts            Per-IP / per-user limits (auth, contact, uploads)
-│   │   └── error-handler.ts         AppError → { error: { code, message, fields } }
-│   ├── modules/                     One folder per domain: routes + controller + service + schemas
-│   │   ├── auth/                    session, login, signup, logout, Google OAuth, password reset
-│   │   ├── account/                 /me: profile, password, sessions, 2FA, notification prefs, delete
-│   │   ├── services/                CRUD, start/stop/restart, plan change
-│   │   ├── env-vars/                Encrypted environment variables
-│   │   ├── deployments/             Trigger, list, details + build logs
-│   │   ├── logs/                    Runtime logs (history + SSE stream)
-│   │   ├── metrics/                 Service metrics (history + live)
-│   │   ├── events/                  Per-user SSE hub (/v1/events)
-│   │   ├── api-keys/
-│   │   ├── notifications/
-│   │   ├── team/                    Members + invitations
-│   │   ├── billing/                 Summary, invoices, Stripe portal
-│   │   ├── support/                 Tickets
-│   │   ├── contact/                 Public contact form
-│   │   ├── catalog/                 Public plans + regions
-│   │   ├── status/                  Public status page data
-│   │   ├── servers/                 Hosts visible to customers
-│   │   ├── admin/                   Control Center stats (platform admins)
-│   │   ├── uploads/                 .zip/.tar/.gz source uploads
-│   │   ├── integrations/github/     GitHub App install, repos, branches
-│   │   └── webhooks/                Stripe + GitHub webhooks (raw body, signature check)
-│   ├── jobs/                        BullMQ workers
-│   │   ├── deploy.worker.ts         Runs the 5 deploy stages, streams build logs, updates status
-│   │   ├── metrics.collector.ts     Samples container stats → SSE + metrics table
-│   │   ├── usage-alerts.ts          80% RAM/storage → notification + email
-│   │   └── email.worker.ts
-│   ├── runtime/
-│   │   ├── docker.ts                Docker Engine API client (build, run, stop, stats, logs)
-│   │   └── scheduler.ts             Picks a server in the region (fills Service.server)
-│   └── lib/
-│       ├── errors.ts                AppError + helpers (notFound, forbidden, conflict…)
-│       ├── crypto.ts                AES-256-GCM for env vars & TOTP secrets, sha256 for tokens/keys
-│       ├── ids.ts                   Prefixed random ids (usr_, dep_, key_, ntf_…)
-│       ├── slug.ts                  Service id from name (same rules as apps/frontend/lib/format.ts slugify)
-│       ├── mailer.ts
-│       └── serializers.ts           DB row → API JSON (camelCase, epoch-ms timestamps)
-├── prisma/schema.prisma             (or drizzle/ schema)
-├── tests/                           Integration tests per module (supertest)
-├── .env.example
-├── tsconfig.json
-└── package.json                     scripts: dev, build, start, test, db:migrate, db:seed
+│   ├── server.ts  worker.ts  cli.ts       Process entry points (API · worker/collector · operator CLI)
+│   ├── app.ts  routes.ts  internal.ts     Express app, /v1 route table, private listener (readiness, metrics, proxy feed)
+│   ├── bootstrap.ts  context.ts           Config + MongoDB + Redis + integrations; ctx() for services
+│   ├── config/env.ts                      Zod-validated environment and capabilities
+│   ├── db/                                connection (replica set, withTransaction), models/, indexes, migrations
+│   ├── http/  middleware/                 cookies, validation, principals; authenticate, CSRF, tenant, rate limits, idempotency, errors
+│   ├── modules/<area>/                    *.routes.ts + *.service.ts per feature: auth, account, teams, services, deployments,
+│   │                                      logs, metrics, events, uploads, github, billing, api-keys, notifications, support,
+│   │                                      platform (servers, status, admin), catalog, email, health
+│   ├── runtime/                           Docker driver, pipeline, operations, capacity, collectors, crash policy, reconcile, purge
+│   ├── jobs/                              Transactional outbox, BullMQ queues, runner, processor registry
+│   ├── realtime/                          Event hub (Redis Streams + Pub/Sub), SSE writer
+│   ├── integrations/                      mail, storage (S3/filesystem), Google OIDC, GitHub App, Stripe
+│   ├── serializers/                       Model → DTO (no _id, hashes, encrypted values or container ids)
+│   ├── lib/                               errors, ids, crypto (AES-256-GCM, HMAC), logger, audit
+│   └── openapi.ts                         OpenAPI description → docs/openapi.json
+├── scripts/                               env-init (local .env), dev-infra (Docker-free MongoDB + Redis), openapi
+├── Dockerfile                             Non-root runtime image (API, worker, CLI)
+└── .env.example                           Every variable, with production notes
 ```
 
-### Proposed shared package
+## `packages/shared/`
 
 ```
-packages/shared/
-├── src/types.ts       Moved from apps/frontend/lib/types.ts (User, Service, Deployment…)
-├── src/catalog.ts     Plans + regions + isRegionAllowed (one source of truth)
-└── src/api.ts         Request/response types for every endpoint
+packages/shared/src/
+├── enums.ts         Service types, statuses, plans, roles, stages… (arrays are the source of truth)
+├── catalog.ts       Plans with prices in cents, regions + plan rules, Node versions, limits, retention
+├── validation.ts    Regexes and user-facing messages shared by the forms and the API
+├── permissions.ts   Role/API-key permission matrix (enforced by the API, used by the dashboard to gate controls)
+└── types.ts         Wire DTOs for every endpoint and SSE event
 ```
-
-This stops the frontend and backend from drifting apart. Until it exists, **any change to `lib/types.ts`, `lib/catalog.ts` or `data/regions.ts` must be mirrored in `apps/backend/src/catalog/`**.

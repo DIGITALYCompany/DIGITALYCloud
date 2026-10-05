@@ -1,0 +1,128 @@
+# Local development infrastructure for DIGITALYCloud. Development only: credentials are fixed,
+# ports bind to 127.0.0.1, and nothing here is a production topology (see docs/operations.md).
+#
+#   docker compose up -d                    MongoDB replica set, Redis, Mailpit
+#   docker compose --profile s3 up -d       + S3-compatible object storage (MinIO) with a dev bucket
+#   docker compose --profile proxy up -d    + Traefik fed by the API's route feed (Linux / host networking)
+#   docker compose --profile app up -d      + API and worker containers built from apps/backend/Dockerfile
+#
+# The API, worker and web app normally run on the host with `npm run dev:*` (see apps/backend/README.md).
+
+name: digitalycloud
+
+services:
+  mongo:
+    image: mongo:8.2
+    # Single-node replica set: multi-document transactions need a replica set even locally.
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    ports: ["127.0.0.1:27017:27017"]
+    volumes: ["mongo-data:/data/db"]
+    healthcheck:
+      # Initiates the set on first start, then reports healthy only once this node is a writable primary.
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --eval
+        - "try { rs.status() } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:27017' }] }) } quit(db.hello().isWritablePrimary ? 0 : 1)"
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 10s
+
+  redis:
+    image: redis:8-alpine
+    # BullMQ requires noeviction; AOF keeps queued jobs across restarts.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports: ["127.0.0.1:6379:6379"]
+    volumes: ["redis-data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:latest
+    # SMTP on 1025, inbox UI on http://localhost:8025
+    ports: ["127.0.0.1:1025:1025", "127.0.0.1:8025:8025"]
+
+  minio:
+    profiles: ["s3"]
+    # Any S3-compatible store works; MinIO is used here only as a local stand-in for S3.
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: digitaly
+      MINIO_ROOT_PASSWORD: digitaly-dev-secret
+    ports: ["127.0.0.1:9000:9000", "127.0.0.1:9001:9001"]
+    volumes: ["minio-data:/data"]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio-init:
+    profiles: ["s3"]
+    image: minio/mc:latest
+    depends_on:
+      minio: { condition: service_healthy }
+    entrypoint:
+      - /bin/sh
+      - -c
+      - mc alias set local http://minio:9000 digitaly digitaly-dev-secret && mc mb --ignore-existing local/digitaly-dev
+    restart: "no"
+
+  traefik:
+    profiles: ["proxy"]
+    image: traefik:v3
+    # Host networking so Traefik reaches both the API's private listener (127.0.0.1:4001) and the
+    # container ports the runtime publishes on the server's private address (127.0.0.1 for add-local).
+    # Linux, or Docker Desktop with host networking enabled.
+    network_mode: host
+    command:
+      - --entrypoints.web.address=:8080
+      - --providers.http.endpoint=http://127.0.0.1:4001/internal/proxy/traefik
+      - --providers.http.pollInterval=2s
+      - --providers.http.headers.Authorization=Bearer ${INTERNAL_API_TOKEN:-}
+      - --log.level=INFO
+
+  api:
+    profiles: ["app"]
+    build: { context: ., dockerfile: apps/backend/Dockerfile }
+    env_file: ["apps/backend/.env"]
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/digitalycloud?replicaSet=rs0&directConnection=true
+      REDIS_URL: redis://redis:6379
+      SMTP_URL: smtp://mailpit:1025
+      INTERNAL_HOST: 0.0.0.0
+      STORAGE_DIR: /data/storage
+    ports: ["127.0.0.1:4000:4000"]
+    volumes: ["app-storage:/data/storage"]
+    depends_on:
+      mongo: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    command: ["sh", "-c", "node dist/cli.js migrate up && node dist/server.js"]
+
+  worker:
+    profiles: ["app"]
+    build: { context: ., dockerfile: apps/backend/Dockerfile }
+    env_file: ["apps/backend/.env"]
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/digitalycloud?replicaSet=rs0&directConnection=true
+      REDIS_URL: redis://redis:6379
+      SMTP_URL: smtp://mailpit:1025
+      STORAGE_DIR: /data/storage
+      # Containerised workers do not get the Docker socket; run the worker on the host for runtime checks.
+      RUNTIME_DRIVER: disabled
+    volumes: ["app-storage:/data/storage"]
+    depends_on:
+      api: { condition: service_healthy }
+    command: ["node", "dist/worker.js"]
+
+volumes:
+  mongo-data:
+  redis-data:
+  minio-data:
+  app-storage:

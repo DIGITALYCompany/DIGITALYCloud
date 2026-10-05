@@ -18,7 +18,7 @@ export function useServiceActions(service: Service | undefined) {
   const [pending, setPending] = useState<Pending>(null);
   const [busy, setBusy] = useState<ActionBusy>(null);
 
-  const run = async (kind: Exclude<ActionBusy, null>, fn: () => Promise<void>, success: string) => {
+  const run = async (kind: Exclude<ActionBusy, null>, fn: () => Promise<unknown>, success: string) => {
     if (!service) return;
     setBusy(kind);
     try {
@@ -31,8 +31,10 @@ export function useServiceActions(service: Service | undefined) {
     }
   };
 
-  const restart = () => service && run('restart', () => cloud.restart(service.id), `${service.name} restarted`);
-  const start = () => service && run('start', () => cloud.restart(service.id), `${service.name} is starting`);
+  // The API answers once the worker finished, or with the operation still in progress.
+  const settled = (s: Service, done: string, pending: string) => (s.operation ? pending : done);
+  const restart = () => service && run('restart', async () => toast({ kind: 'success', title: settled(await cloud.restart(service.id), `${service.name} restarted`, `Restarting ${service.name}…`) }), '');
+  const start = () => service && run('start', async () => toast({ kind: 'success', title: settled(await cloud.start(service.id), `${service.name} is running`, `Starting ${service.name}…`) }), '');
   const deploy = () => service && run('deploy', () => cloud.deploy(service.id), '');
   const askStop = () => setPending('stop');
   const askDelete = () => setPending('delete');
@@ -46,8 +48,8 @@ export function useServiceActions(service: Service | undefined) {
         description={<>The service will go offline immediately{service.type === 'discord' ? ' and your bot will disconnect from Discord' : ''}. You can start it again at any time.</>}
         confirmLabel="Stop service"
         onConfirm={async () => {
-          await cloud.stop(service.id);
-          toast({ kind: 'warning', title: `${service.name} stopped`, description: 'The service is now offline.' });
+          const s = await cloud.stop(service.id);
+          toast(s.operation ? { kind: 'info', title: `Stopping ${service.name}…` } : { kind: 'warning', title: `${service.name} stopped`, description: 'The service is now offline.' });
         }}
       />
       <ConfirmDialog
@@ -66,5 +68,8 @@ export function useServiceActions(service: Service | undefined) {
     </>
   ) : null;
 
-  return { restart, start, deploy, askStop, askDelete, busy, dialogs };
+  // Work running on the server (possibly started from another tab) also counts as busy.
+  const op = service?.operation?.kind;
+  const serverBusy: ActionBusy = op === 'restart' ? 'restart' : op === 'stop' ? 'stop' : op === 'start' ? 'start' : op === 'deploy' ? 'deploy' : null;
+  return { restart, start, deploy, askStop, askDelete, busy: busy ?? serverBusy, dialogs };
 }

@@ -8,8 +8,9 @@ import { Panel } from '@/components/ui/card';
 import { EmptyState, ErrorState } from '@/components/ui/empty-state';
 import { ConfirmDialog, Modal } from '@/components/ui/modal';
 import { CardSkeleton } from '@/components/ui/skeleton';
+import { useAuth } from '@/providers/auth-provider';
 import { useToast } from '@/providers/toast-provider';
-import { api } from '@/lib/api';
+import { API_URL, api, errorMessage } from '@/lib/api';
 import { copyToClipboard } from '@/lib/browser';
 import { formatDate, timeAgo } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -17,8 +18,10 @@ import type { ApiKey } from '@/lib/types';
 
 export function ApiKeysPanel() {
   const toast = useToast();
+  const { can, team } = useAuth();
+  const manage = can('apiKeys.manage');
   const [keys, setKeys] = useState<ApiKey[] | null>(null);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState('');
   const [scope, setScope] = useState<ApiKey['scope']>('read');
@@ -28,16 +31,17 @@ export function ApiKeysPanel() {
   const [revoking, setRevoking] = useState<ApiKey | null>(null);
 
   const fetchKeys = useCallback(() => {
+    if (!manage) return;
     api.apiKeys
       .list()
       .then(setKeys)
-      .catch(() => setError(true));
-  }, []);
+      .catch((e: unknown) => setError(errorMessage(e, 'Could not load your API keys.')));
+  }, [manage]);
 
-  useEffect(fetchKeys, [fetchKeys]);
+  useEffect(fetchKeys, [fetchKeys, team?.id]);
 
   const retry = () => {
-    setError(false);
+    setError(null);
     setKeys(null);
     fetchKeys();
   };
@@ -50,8 +54,8 @@ export function ApiKeysPanel() {
       setSecret(res.secret);
       setCreateOpen(false);
       setName('');
-    } catch {
-      toast({ kind: 'error', title: 'Could not create key' });
+    } catch (e) {
+      toast({ kind: 'error', title: 'Could not create key', description: errorMessage(e) });
     } finally {
       setCreating(false);
     }
@@ -64,10 +68,18 @@ export function ApiKeysPanel() {
     toast({ kind: 'success', title: 'Copied to clipboard' });
   };
 
+  if (!manage) {
+    return (
+      <Panel title="API keys" description="Use these to call the DIGITALYCloud API from CI or scripts.">
+        <p className="text-sm text-ink-400">Only team owners and admins can create and revoke API keys.</p>
+      </Panel>
+    );
+  }
+
   return (
     <Panel
       title="API keys"
-      description="Use these to call the DIGITALYCloud API from CI or scripts."
+      description={`Keys belong to ${team ? `the ${team.name} team` : 'this team'}. Use them to call the DIGITALYCloud API from CI or scripts.`}
       bodyClass="p-0"
       action={
         <Button size="sm" icon={<Plus className="h-4 w-4" />} onClick={() => setCreateOpen(true)}>
@@ -77,7 +89,7 @@ export function ApiKeysPanel() {
     >
       {error ? (
         <div className="p-5">
-          <ErrorState message="Could not load your API keys." onRetry={retry} />
+          <ErrorState message={error} onRetry={retry} />
         </div>
       ) : !keys ? (
         <div className="p-5">
@@ -166,6 +178,10 @@ export function ApiKeysPanel() {
             {copied ? <Check className="h-4 w-4 text-success-400" /> : <Copy className="h-4 w-4" />}
           </button>
         </div>
+        <p className="mt-4 text-xs text-ink-400">Try it:</p>
+        <code className="mt-1.5 block break-all rounded-xl border border-white/[0.06] bg-[#05070D] p-3 font-mono text-xs text-ink-200">
+          curl -H &quot;Authorization: Bearer {secret}&quot; {API_URL}/services
+        </code>
       </Modal>
 
       <ConfirmDialog

@@ -27,11 +27,13 @@ Users sign up, create a **service** in a 5-step wizard, and it deploys. From the
 | Part                      | State                                                                                                                                  |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | Marketing site, docs, status, legal | ✅ Done. Static content in `apps/frontend/data/`.                                                                             |
-| Auth screens              | ✅ UI done. Uses the mock (any email + password of 6+ characters signs in).                                                            |
-| Dashboard                 | ✅ UI done. Uses the mock for services, deployments, env vars, API keys, notifications. Other screens use hard-coded data.                 |
-| Backend (`apps/backend`)  | ❌ Not started. Only `package.json` with `express@^5.2.1`.                                                                             |
-| Real deployments/runtime  | ❌ None. Deploy progress, logs, metrics and resource usage are all simulated in the browser.                                       |
-| Payments                  | ❌ None. Card, invoices and next billing date are hard-coded.                                                                         |
+| Auth screens              | ✅ Connected to the API: email/password, Google, 2FA, reset password, email verification, invitations.                                 |
+| Dashboard                 | ✅ Every screen connected to the API (no mock or simulated data). See [backend-coverage.md](backend-coverage.md).                      |
+| Backend (`apps/backend`)  | ✅ Implemented: Express 5, MongoDB replica set, Redis/BullMQ, SSE, Docker runtime, Stripe. See [apps/backend/README.md](../apps/backend/README.md). |
+| Real deployments/runtime  | ✅ Code complete (Docker hosts, build/health/swap/rollback). ⚠️ Not yet exercised against a real Docker host (none on the build machine).  |
+| Payments                  | ✅ Code complete (Stripe Checkout, proration, portal, invoices, webhooks). ⚠️ Live Stripe test mode not yet run.                        |
+
+Progress and remaining verification: [backend-progress.md](backend-progress.md).
 
 ## Features (what the backend has to support)
 
@@ -51,8 +53,9 @@ Users sign up, create a **service** in a 5-step wizard, and it deploys. From the
 | ----------------------- | ------------------ | ------------------------------------------------------------------------------ |
 | Email + password login  | `/login`           | "Remember me" checkbox → long-lived vs browser-session cookie. `?from=` returns the user to the page they came from. |
 | Sign up                 | `/signup`          | Name, email, password (≥ 8 chars)                                              |
-| Google sign-in          | `/login`, `/signup`| Button exists, mock fakes it                                                   |
-| Forgot password         | `/forgot-password` | Sends reset email. **The reset page itself (`/reset-password?token=`) does not exist yet.** |
+| Google sign-in          | `/login`, `/signup`| OpenID Connect through the API (`/v1/auth/google`)                             |
+| Forgot password         | `/forgot-password` | Sends the reset email; `/reset-password?token=` sets the new password          |
+| Email verification, invitations | `/verify-email?token=`, `/invite?token=` | Links from emails                                       |
 
 ### Dashboard (logged in)
 
@@ -124,9 +127,9 @@ From `data/regions.ts`. A region is allowed when `level(plan) ≥ level(region.m
 
 Coverage by plan: free = France · starter = all of Europe · pro = Europe & North America · business = worldwide.
 
-The UI displays a region as `"{country} — {city}"` (e.g. `France — Lyon`). The mock stores that **label** in `Service.region`. The backend should store the region **id** (see [04-data-models.md](04-data-models.md)).
-
-> Only **Lyon** and **Paris** have servers in the seed data (`Lyon-01`, `Lyon-02`, `Paris-01`). The other regions are listed for sale but have no infrastructure in the demo. See [open questions](08-roadmap-and-open-questions.md).
+The UI displays a region as `"{country} — {city}"` (e.g. `France — Lyon`); services store the region **id** (`regionId`) and
+the API sends both. A region is only offered when a healthy server with free capacity exists there (`GET /v1/catalog`
+`regions[].available`); servers are registered by operators (docs/operations.md).
 
 ## Users and roles
 
@@ -144,16 +147,17 @@ There are **two separate role systems**. Don't mix them up:
 
 ## Tech stack
 
-| Layer     | Today                                                                                   | Proposed for backend                                                  |
-| --------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Frontend  | Next.js 16.3 (App Router, Turbopack, `typedRoutes`), React 19.2, TypeScript 5, Tailwind CSS v4, shadcn/ui conventions (Radix, `cva`, `cn()`), Recharts 3, lucide-react 0.446 (pinned) | — |
-| Backend   | Express 5 (declared only)                                                               | Node.js 22 + TypeScript, Express 5, Zod validation                    |
-| Database  | `localStorage` (mock)                                                                   | PostgreSQL 16 (+ Prisma or Drizzle)                                   |
-| Jobs      | `setTimeout` in the browser                                                             | Redis + BullMQ (deploy pipeline, emails, usage alerts)               |
-| Runtime   | Simulated                                                                               | Docker containers on DIGITALY servers (Docker Engine API)             |
-| Real-time | Simulated intervals                                                                     | Server-Sent Events (SSE)                                              |
-| Payments  | Hard-coded                                                                              | Stripe (subscriptions with proration, Billing Portal, invoices)       |
-| Email     | None                                                                                    | Transactional email provider (SMTP / Resend / Postmark)              |
-| Auth      | Mock                                                                                    | httpOnly session cookie (dashboard) + Bearer API keys (public API), Google OAuth, TOTP 2FA |
+| Layer     | Implementation |
+| --------- | -------------- |
+| Frontend  | Next.js 16.3 (App Router, Turbopack, `typedRoutes`, `proxy.ts`), React 19.2, TypeScript 5, Tailwind CSS v4, shadcn/ui conventions, Recharts 3, lucide-react 0.446 (pinned) |
+| Shared    | `@digitalycloud/shared`: catalog, enums, validation, permissions, DTOs |
+| Backend   | Node.js 24 LTS + TypeScript, Express 5, Zod 4 |
+| Database  | MongoDB 8 replica set with Mongoose 9 (transactions, TTL indexes) |
+| Jobs      | Transactional outbox → Redis + BullMQ (deployments, runtime operations, email, billing, webhooks, maintenance) |
+| Runtime   | Docker containers on DIGITALY servers (Docker Engine API over mTLS), Traefik routing |
+| Real-time | Server-Sent Events backed by Redis Streams + Pub/Sub |
+| Payments  | Stripe (Checkout, subscription items with proration, Customer Portal, invoices, webhooks) |
+| Email     | SMTP (Mailpit locally) |
+| Auth      | HttpOnly session cookie + CSRF token (dashboard), Bearer API keys (public API), Google OIDC, TOTP 2FA |
 
-Details and reasons are in [06-backend-guide.md](06-backend-guide.md).
+Details and reasons are in [06-backend-guide.md](06-backend-guide.md) and [backend-decisions.md](backend-decisions.md).

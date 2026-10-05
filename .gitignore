@@ -23,3 +23,5 @@ npm-debug.log*
 
 # Vercel
 .vercel/
+# Local data (development storage, Docker-free MongoDB/Redis)
+.data/

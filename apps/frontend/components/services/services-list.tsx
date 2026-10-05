@@ -7,6 +7,7 @@ import { EmptyState, ErrorState } from '@/components/ui/empty-state';
 import { PageHeader } from '@/components/ui/page-header';
 import { CardSkeleton } from '@/components/ui/skeleton';
 import { Tabs } from '@/components/ui/tabs';
+import { useAuth } from '@/providers/auth-provider';
 import { useCloud } from '@/providers/cloud-provider';
 import type { Service, ServiceStatus } from '@/lib/types';
 import { ServiceCard } from './service-card';
@@ -23,6 +24,7 @@ const SORTERS: Record<Sort, (a: Service, b: Service) => number> = {
 
 export function ServicesList() {
   const { services, loading, error, reload } = useCloud();
+  const { can } = useAuth();
   const [filter, setFilter] = useState<Filter>('all');
   const [q, setQ] = useState('');
   const [sort, setSort] = useState<Sort>('recent');
@@ -39,9 +41,11 @@ export function ServicesList() {
         title="Services"
         description="Everything you're hosting on DIGITALYCloud."
         actions={
-          <ButtonLink href="/services/new" icon={<Plus className="h-4 w-4" />}>
-            New Service
-          </ButtonLink>
+          can('services.create') ? (
+            <ButtonLink href="/services/new" icon={<Plus className="h-4 w-4" />}>
+              New Service
+            </ButtonLink>
+          ) : undefined
         }
       />
 

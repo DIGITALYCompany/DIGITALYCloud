@@ -1,7 +1,11 @@
 # 05 — API reference
 
-The full HTTP contract between the frontend and the backend. Status: **Proposed**. Nothing is implemented yet.
-Every endpoint lists the mock function it **replaces** (`apps/frontend/lib/api/mock-api.ts`) and the UI file that **uses** it, so the two sides can be built and checked against each other.
+> **Implemented.** Every endpoint below exists. Extensions and the few deviations (CSRF bootstrap, team scope header, billing
+> operations, email verification, nullable fields) are listed in [backend-decisions.md §9](backend-decisions.md#9-endpoint-and-dto-extensions-to-05-api-reference);
+> the generated [openapi.json](openapi.json) is the exact contract (`npm run openapi` in apps/backend regenerates it).
+
+The HTTP contract between the frontend and the backend, written before implementation. Every endpoint lists the former
+mock function it **replaced** and the UI file that **uses** it.
 
 ---
 

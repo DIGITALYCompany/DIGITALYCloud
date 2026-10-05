@@ -7,9 +7,12 @@ import { Switch } from '@/components/ui/switch';
 import { useServiceActions } from '@/components/services/use-service-actions';
 import { useCloud } from '@/providers/cloud-provider';
 import { useToast } from '@/providers/toast-provider';
-import { NODE_VERSIONS, getServicePlan, getServicePlans } from '@/lib/catalog';
+import { usePlanChange } from '@/components/services/change-plan-modal';
+import { errorMessage, type UpdateServiceInput } from '@/lib/api';
+import { NODE_VERSIONS, getServicePlans } from '@/lib/catalog';
 import { formatMb } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { isSupportedNodeVersion, planAllowsAutoRestart, typeRequiresPort, type NodeVersion } from '@digitalycloud/shared';
 import type { PlanId, Service } from '@/lib/types';
 import { useService } from './service-shell';
 
@@ -25,7 +28,7 @@ function Section({ title, description, children }: { title: string; description:
   );
 }
 
-const formFrom = (s: Service) => ({ name: s.name, startCommand: s.startCommand, nodeVersion: s.nodeVersion, port: s.port ? String(s.port) : '', branch: s.branch });
+const formFrom = (s: Service) => ({ name: s.name, startCommand: s.startCommand, nodeVersion: s.nodeVersion as string, port: s.port ? String(s.port) : '', branch: s.branch ?? '' });
 
 function GeneralSection({ service }: { service: Service }) {
   const { update } = useCloud();
@@ -37,10 +40,20 @@ function GeneralSection({ service }: { service: Service }) {
 
   const save = async () => {
     if (form.name.trim().length < 2) return toast({ kind: 'error', title: 'Name is too short' });
+    // Only changed fields are sent; the server validates each against the service type and source.
+    const patch: UpdateServiceInput = {};
+    if (form.name.trim() !== current.name) patch.name = form.name.trim();
+    if (form.startCommand !== current.startCommand) patch.startCommand = form.startCommand;
+    if (form.nodeVersion !== current.nodeVersion) patch.nodeVersion = form.nodeVersion as NodeVersion;
+    if (form.port !== current.port) patch.port = form.port ? +form.port : null;
+    if (form.branch !== current.branch) patch.branch = form.branch;
     setSaving(true);
     try {
-      await update(service.id, { name: form.name.trim(), startCommand: form.startCommand, nodeVersion: form.nodeVersion, port: form.port ? +form.port : null, branch: form.branch });
-      toast({ kind: 'success', title: 'Settings saved', description: 'Changes apply on the next deployment.' });
+      const updated = await update(service.id, patch);
+      setForm(formFrom(updated));
+      toast({ kind: 'success', title: 'Settings saved', description: updated.pendingChanges.settings ? 'Changes apply on the next deployment.' : undefined });
+    } catch (e) {
+      toast({ kind: 'error', title: 'Settings not saved', description: errorMessage(e) });
     } finally {
       setSaving(false);
     }
@@ -59,7 +72,14 @@ function GeneralSection({ service }: { service: Service }) {
           <label className="label" htmlFor="svc-branch">
             Branch
           </label>
-          <input id="svc-branch" className="input font-mono" value={form.branch} onChange={(e) => setForm({ ...form, branch: e.target.value })} disabled={service.source !== 'github'} />
+          <input
+            id="svc-branch"
+            className="input font-mono"
+            value={form.branch}
+            placeholder={service.source === 'github' ? 'main' : 'Not used for this source'}
+            onChange={(e) => setForm({ ...form, branch: e.target.value })}
+            disabled={service.source !== 'github'}
+          />
         </div>
         <div>
           <label className="label" htmlFor="svc-command">
@@ -71,17 +91,30 @@ function GeneralSection({ service }: { service: Service }) {
           <label className="label" htmlFor="svc-port">
             Port
           </label>
-          <input id="svc-port" className="input font-mono" value={form.port} placeholder="None" onChange={(e) => setForm({ ...form, port: e.target.value.replace(/\D/g, '') })} />
+          <input
+            id="svc-port"
+            className="input font-mono"
+            value={form.port}
+            placeholder={typeRequiresPort(service.type) ? '3000' : 'None'}
+            onChange={(e) => setForm({ ...form, port: e.target.value.replace(/\D/g, '') })}
+          />
         </div>
         <div>
           <label className="label" htmlFor="svc-node">
             Node.js version
           </label>
-          <select id="svc-node" className="input" value={form.nodeVersion} onChange={(e) => setForm({ ...form, nodeVersion: e.target.value })}>
+          <select id="svc-node" className="input" value={form.nodeVersion} onChange={(e) => setForm({ ...form, nodeVersion: e.target.value })} disabled={service.source === 'docker'}>
+            {!isSupportedNodeVersion(current.nodeVersion) && (
+              <option value={current.nodeVersion} disabled>
+                {current.nodeVersion} (end of life)
+              </option>
+            )}
             {NODE_VERSIONS.map((v) => (
               <option key={v}>{v}</option>
             ))}
           </select>
+          {service.source === 'docker' && <p className="mt-1.5 text-xs text-ink-500">Docker images bring their own runtime.</p>}
+          {service.source !== 'docker' && !isSupportedNodeVersion(current.nodeVersion) && <p className="mt-1.5 text-xs text-warning-400">Node.js {current.nodeVersion} is end of life. Pick a supported version before the next deployment.</p>}
         </div>
       </div>
       <div className="mt-5 flex justify-end">
@@ -95,17 +128,17 @@ function GeneralSection({ service }: { service: Service }) {
 
 // Keyed by the current plan in the parent, so the selection resets when the plan changes.
 function ResourcesSection({ service }: { service: Service }) {
-  const { update } = useCloud();
-  const toast = useToast();
+  const { catalog } = useCloud();
+  const apply = usePlanChange();
   const [plan, setPlan] = useState<PlanId>(service.plan);
   const [saving, setSaving] = useState(false);
+  const paidAvailable = catalog?.paidPlansAvailable ?? false;
+  const { resources, resourceError } = service.pendingChanges;
 
   const save = async () => {
-    const p = getServicePlan(service.type, plan);
     setSaving(true);
     try {
-      await update(service.id, { plan, ramLimitMb: p.ramMb, storageLimitMb: p.storageGb * 1024 });
-      toast({ kind: 'success', title: `${service.name} is now on ${p.name}`, description: `${formatMb(p.ramMb)} RAM · ${p.vcpu} vCPU` });
+      await apply(service, plan);
     } finally {
       setSaving(false);
     }
@@ -119,7 +152,12 @@ function ResourcesSection({ service }: { service: Service }) {
             key={p.id}
             onClick={() => setPlan(p.id)}
             aria-pressed={plan === p.id}
-            className={cn('flex items-center justify-between rounded-xl border px-4 py-3 text-left transition', plan === p.id ? 'border-brand-500/60 bg-brand-500/[0.07]' : 'border-white/[0.08] hover:border-white/20')}
+            disabled={p.id !== service.plan && p.priceCents > 0 && !paidAvailable}
+            title={p.id !== service.plan && p.priceCents > 0 && !paidAvailable ? 'Paid plans can’t be purchased on this platform yet' : undefined}
+            className={cn(
+              'flex items-center justify-between rounded-xl border px-4 py-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50',
+              plan === p.id ? 'border-brand-500/60 bg-brand-500/[0.07]' : 'border-white/[0.08] hover:border-white/20'
+            )}
           >
             <div>
               <p className="text-sm font-medium text-white">{p.name}</p>
@@ -131,6 +169,11 @@ function ResourcesSection({ service }: { service: Service }) {
           </button>
         ))}
       </div>
+      {resources && (
+        <p className={cn('mt-4 rounded-xl border px-4 py-3 text-xs', resourceError ? 'border-danger-500/25 bg-danger-500/[0.06] text-danger-400' : 'border-white/[0.07] text-ink-300')}>
+          {resourceError ? `The new limits couldn’t be applied yet: ${resourceError} We retry automatically.` : 'Applying the plan’s limits to the running service…'}
+        </p>
+      )}
       <div className="mt-5 flex justify-end">
         <Button onClick={save} disabled={plan === service.plan} loading={saving}>
           Change plan
@@ -141,13 +184,24 @@ function ResourcesSection({ service }: { service: Service }) {
 }
 
 function BehaviorSection({ service }: { service: Service }) {
+  const { update } = useCloud();
   const toast = useToast();
-  const [autoDeploy, setAutoDeploy] = useState(true);
-  const [autoRestart, setAutoRestart] = useState(service.plan !== 'free');
+  const [saving, setSaving] = useState<'autoDeploy' | 'autoRestart' | null>(null);
   const options = [
-    { label: 'Automatic deploys', desc: 'Deploy every push to the configured branch.', value: autoDeploy, set: setAutoDeploy, disabled: service.source !== 'github' },
-    { label: 'Automatic restart', desc: 'Restart the process if it crashes. Available on paid plans.', value: autoRestart, set: setAutoRestart, disabled: service.plan === 'free' },
+    { key: 'autoDeploy' as const, label: 'Automatic deploys', desc: 'Deploy every push to the configured branch.', value: service.autoDeploy, disabled: service.source !== 'github' },
+    { key: 'autoRestart' as const, label: 'Automatic restart', desc: 'Restart the process if it crashes. Available on paid plans.', value: service.autoRestart, disabled: !planAllowsAutoRestart(service.plan) },
   ];
+  const set = async (key: 'autoDeploy' | 'autoRestart', label: string, v: boolean) => {
+    setSaving(key);
+    try {
+      await update(service.id, { [key]: v });
+      toast({ kind: 'success', title: `${label} ${v ? 'enabled' : 'disabled'}` });
+    } catch (e) {
+      toast({ kind: 'error', title: `${label} not changed`, description: errorMessage(e) });
+    } finally {
+      setSaving(null);
+    }
+  };
 
   return (
     <Section title="Behavior" description="Automations for deployments and crashes.">
@@ -161,9 +215,8 @@ function BehaviorSection({ service }: { service: Service }) {
             <Switch
               checked={o.value && !o.disabled}
               onChange={(v) => {
-                if (o.disabled) return;
-                o.set(v);
-                toast({ kind: 'success', title: `${o.label} ${v ? 'enabled' : 'disabled'}` });
+                if (o.disabled || saving) return;
+                void set(o.key, o.label, v);
               }}
               label={o.label}
             />
