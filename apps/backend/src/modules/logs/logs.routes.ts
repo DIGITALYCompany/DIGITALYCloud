@@ -45,7 +45,7 @@ export function logsRouter() {
     const team = tenantOf(req).team;
     let svc: ServiceDoc = await getService(team._id, String(req.params.id));
     const { user, session } = sessionUser(req);
-    const slot = await claimStreamSlot(req, user._id, 'logs');
+    const slot = await claimStreamSlot(user._id, 'logs');
     openStream(res);
     const out = writer(res);
     let last = since ?? 0;

@@ -242,6 +242,6 @@ display address).
 - Runtime hosts: kernel/filesystem with quota support (XFS `pquota` or overlay2 on XFS), gVisor, registry for multi-host
   deployments, base image digests (`RUNTIME_NODE_IMAGES`), host headroom.
 - DNS/TLS: wildcard certificate for the runtime domain, cookie domain for the dashboard/API pair.
-- Email provider (SMTP) and sender domain authentication (SPF/DKIM/DMARC).
+- Brevo plan (daily sending limit) and sender domain authentication (DKIM/DMARC) for `digitaly.fr`.
 - GeoIP for session locations (not configured: `location` is `null` rather than guessed).
 - Legal texts, data retention commitments and the support inbox.

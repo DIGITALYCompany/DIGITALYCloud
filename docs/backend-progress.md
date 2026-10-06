@@ -27,7 +27,7 @@ Decisions are in [backend-decisions.md](backend-decisions.md); endpoint/screen s
   dependencies: `migrate up`, `migrate status`, `indexes verify`, `seed`, API + worker start, health/readiness, CSRF
   rejection, cookie login, API-key bearer request, internal token gate, Prometheus metrics, route feed, SIGTERM drain.
 - Redis outage test: process survives, requests fail fast (≤1.5 s), readiness 503, automatic recovery.
-- Not verifiable here: `docker build`, `docker compose up`, real Docker runtime, Traefik, Stripe/Google/GitHub/SMTP/S3 live.
+- Not verifiable here: `docker build`, `docker compose up`, real Docker runtime, Traefik, Stripe/Google/GitHub/Brevo/S3 live.
 
 ## Known placeholders to remove
 
@@ -39,7 +39,7 @@ Decisions are in [backend-decisions.md](backend-decisions.md); endpoint/screen s
    Docker image; verify hardening (non-root, limits, disk quota), crash restarts, blue/green and rollback.
 2. Traefik with the route feed and a wildcard certificate.
 3. Stripe test mode: prices in `STRIPE_PRICES`, webhook endpoint, the flows listed in docs/operations.md §5.
-4. Google OAuth client and GitHub App against the real providers; SMTP (Mailpit, then the real provider); S3 (MinIO profile).
+4. Google OAuth client and GitHub App against the real providers; Brevo with a real API key and verified sender; S3 (MinIO profile).
 5. `docker build` / `docker compose up` (CI builds the backend image; not run locally).
 6. Branded OG image (`apps/frontend/config/site.ts`).
 

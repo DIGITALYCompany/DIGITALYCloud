@@ -11,7 +11,7 @@ Hosting for Discord bots, Node.js apps, APIs and background workers — by DIGIT
 ```bash
 npm install                                   # once, at the root (npm workspaces, one lockfile)
 cd apps/backend && npm run env:init && cd -   # local backend .env with generated secrets
-docker compose up -d                          # MongoDB replica set, Redis, Mailpit — or: npm run dev:infra --workspace backend
+docker compose up -d                          # MongoDB replica set, Redis — or: npm run dev:infra --workspace backend
 npm run db:migrate --workspace backend
 npm run dev:api                               # http://localhost:4000/v1
 npm run dev:worker

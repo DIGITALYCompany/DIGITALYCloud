@@ -11,7 +11,7 @@ DIGITALYCloud/
 │   └── shared/             @digitalycloud/shared: enums, catalog, validation, permissions, API DTOs (used by both apps)
 ├── docs/                   ← you are here: project, API, integration and operations documentation
 ├── .github/workflows/ci.yml  Typecheck, lint and build all workspaces; build the backend image
-├── compose.yaml            Local MongoDB replica set, Redis, Mailpit (+ MinIO, Traefik, app profiles)
+├── compose.yaml            Local MongoDB replica set, Redis (+ MinIO, Traefik, app profiles)
 ├── package.json            npm workspaces (packages/*, apps/*) and root scripts
 └── package-lock.json       The only lockfile
 ```
@@ -190,7 +190,7 @@ apps/backend/
 │   └── openapi.ts                         OpenAPI description → docs/openapi.json
 ├── scripts/                               env-init (local .env), dev-infra (Docker-free MongoDB + Redis), openapi
 ├── Dockerfile                             Non-root runtime image (API, worker, CLI)
-└── .env.example                           Every variable, with production notes
+└── .env.example                           Main variables, empty values (empty = default)
 ```
 
 ## `packages/shared/`

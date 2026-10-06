@@ -1,7 +1,9 @@
 # Local development infrastructure for DIGITALYCloud. Development only: credentials are fixed,
 # ports bind to 127.0.0.1, and nothing here is a production topology (see docs/operations.md).
 #
-#   docker compose up -d                    MongoDB replica set, Redis, Mailpit
+#   docker compose up -d                    MongoDB replica set, Redis
+#
+# Email goes through Brevo (BREVO_API_KEY in apps/backend/.env); there is no local mail server.
 #   docker compose --profile s3 up -d       + S3-compatible object storage (MinIO) with a dev bucket
 #   docker compose --profile proxy up -d    + Traefik fed by the API's route feed (Linux / host networking)
 #   docker compose --profile app up -d      + API and worker containers built from apps/backend/Dockerfile
@@ -41,11 +43,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
-
-  mailpit:
-    image: axllent/mailpit:latest
-    # SMTP on 1025, inbox UI on http://localhost:8025
-    ports: ["127.0.0.1:1025:1025", "127.0.0.1:8025:8025"]
 
   minio:
     profiles: ["s3"]
@@ -95,7 +92,6 @@ services:
     environment:
       MONGODB_URI: mongodb://mongo:27017/digitalycloud?replicaSet=rs0&directConnection=true
       REDIS_URL: redis://redis:6379
-      SMTP_URL: smtp://mailpit:1025
       INTERNAL_HOST: 0.0.0.0
       STORAGE_DIR: /data/storage
     ports: ["127.0.0.1:4000:4000"]
@@ -112,7 +108,6 @@ services:
     environment:
       MONGODB_URI: mongodb://mongo:27017/digitalycloud?replicaSet=rs0&directConnection=true
       REDIS_URL: redis://redis:6379
-      SMTP_URL: smtp://mailpit:1025
       STORAGE_DIR: /data/storage
       # Containerised workers do not get the Docker socket; run the worker on the host for runtime checks.
       RUNTIME_DRIVER: disabled

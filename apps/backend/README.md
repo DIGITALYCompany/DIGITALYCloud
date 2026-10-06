@@ -25,10 +25,12 @@ Commands were run on 2026-10-05 (macOS, Node 24.20, npm 11.19) unless marked *no
 npm install
 
 cd apps/backend
-npm run env:init          # writes apps/backend/.env (44 lines) with fresh ENCRYPTION_KEYS, APP_SECRET, INTERNAL_API_TOKEN
+npm run env:init          # copies .env.example to .env and generates ENCRYPTION_KEYS, APP_SECRET and the internal token
+# then fill in .env: MONGODB_URI=mongodb://127.0.0.1:27017/digitalycloud?replicaSet=rs0&directConnection=true
+#                    REDIS_URL=redis://127.0.0.1:6379   (empty values use the defaults written in .env.example)
 
 # infrastructure, one of:
-docker compose -f ../../compose.yaml up -d     # MongoDB rs0 + Redis + Mailpit (not verified here: no Docker on this machine)
+docker compose -f ../../compose.yaml up -d     # MongoDB rs0 + Redis (not verified here: no Docker on this machine)
 npm run dev:infra                              # Docker-free MongoDB replica set + Redis on 27017/6379 (keep it running)
 
 npm run db:migrate        # collections, indexes, counters (idempotent)
@@ -44,16 +46,21 @@ see `apps/frontend/.env.example`).
 (`NODE_ENV=production`) and refuses to run twice. Demo services are stopped records with labelled demo deployments;
 they never look like running containers, real servers or subscriptions.
 
-Email: with `SMTP_URL=smtp://127.0.0.1:1025` (Mailpit from the compose file) every email lands in http://localhost:8025.
-Without SMTP, development logs each email's link (`email not sent (SMTP not configured)`) and records the delivery as
-failed — nothing pretends to be sent.
+Email is sent through Brevo's API: put your Brevo API key (`xkeysib-…`) in `BREVO_API_KEY` and use a
+`BREVO_SENDER_EMAIL` verified in Brevo. Emails are real, so sign up with addresses you can read. With `BREVO_API_KEY`
+empty, development logs each email's link (`email not sent (Brevo not configured)`) and records the delivery as failed —
+nothing pretends to be sent.
 
 ## Running real workloads locally
 
 ```bash
 # in apps/backend/.env
 RUNTIME_DRIVER=docker
-RUNTIME_ALLOW_UNENFORCED_STORAGE=true   # uncomment it: laptops/Docker Desktop can't enforce disk quotas (refused in production)
+RUNTIME_ALLOW_UNENFORCED_STORAGE=true   # laptops/Docker Desktop can't enforce disk quotas (refused in production)
+PUBLIC_RUNTIME_DOMAIN=localtest.me      # local app addresses http://<id>.localtest.me:8080
+PUBLIC_RUNTIME_SCHEME=http
+PUBLIC_RUNTIME_PORT=8080
+INTERNAL_PORT=4001                      # Traefik reads the route list from this private port
 
 npm run cli -- server add-local --region lyon   # probes the local Docker socket and registers capacity
 npm run cli -- server list
@@ -95,7 +102,7 @@ Production refuses to start without `COOKIE_SECURE=true`, with the filesystem st
 `RUNTIME_ALLOW_UNENFORCED_STORAGE`, or without the required capabilities
 (`email,storage,runtime` by default; `REQUIRED_CAPABILITIES` overrides). Readiness (`GET /v1/health/ready`, detailed at
 `/internal/ready`) reports MongoDB, Redis, pending migrations, missing indexes and missing capabilities.
-[.env.example](.env.example) lists what local development needs; every variable is in the
+[.env.example](.env.example) lists the main variables (empty value = default); every variable is in the
 [configuration reference](../../docs/operations.md#configuration-reference).
 
 ## Layout

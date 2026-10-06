@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Request, Response } from 'express';
+import type { Response } from 'express';
 import { ctx } from '../context';
 import { rateLimited } from '../lib/errors';
 import { sseConnections } from '../infra/metrics';
@@ -58,7 +58,7 @@ export function writer(res: Response): StreamWriter {
  * Concurrent SSE connections per user (Redis sorted set of heartbeats, so crashed instances'
  * entries expire on their own).
  */
-export async function claimStreamSlot(req: Request, userId: string, kind: 'events' | 'logs') {
+export async function claimStreamSlot(userId: string, kind: 'events' | 'logs') {
   const c = ctx();
   const key = `${c.config.REDIS_PREFIX}:sse:${kind}:${userId}`;
   const id = randomUUID();

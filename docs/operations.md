@@ -4,7 +4,7 @@ How to run DIGITALYCloud in production: processes, hosts, providers, backups, ke
 Setup commands for development are in [apps/backend/README.md](../apps/backend/README.md); design background in
 [backend-decisions.md](backend-decisions.md).
 
-> Status: the procedures for Docker hosts, Traefik, Stripe, Google, GitHub, SMTP and S3 follow the implemented code but were
+> Status: the procedures for Docker hosts, Traefik, Stripe, Google, GitHub, Brevo and S3 follow the implemented code but were
 > **not exercised against live services** on the build machine (see [backend-coverage.md](backend-coverage.md)). Run each
 > once in staging before relying on it.
 
@@ -27,7 +27,8 @@ periodic tasks are BullMQ job schedulers (one schedule regardless of worker coun
 
 ## 2. Configuration and secrets
 
-[apps/backend/.env.example](../apps/backend/.env.example) holds what local development needs; the full list is the
+[apps/backend/.env.example](../apps/backend/.env.example) lists the main variables with empty values; an empty value means
+the default applies. The full list is the
 [configuration reference](#configuration-reference) below. In production:
 
 - Provide them from the orchestrator's secret store; `.env` files are ignored when `NODE_ENV=production`.
@@ -65,7 +66,9 @@ Groups marked *all or none* must be filled completely or left empty (a partial g
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | – (*all or none*) | Google sign-in. `GOOGLE_REDIRECT_URI` defaults to `${API_PUBLIC_URL}/v1/auth/google/callback`. |
 | `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | – (*all or none*) | GitHub App (§5). `GITHUB_API_URL` for GitHub Enterprise. |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICES` | – (*all or none*) | Billing (§5). Without it paid plans answer `503 BILLING_UNAVAILABLE`. `STRIPE_AUTOMATIC_TAX` (`false`). |
-| `SMTP_URL` | – | Email; `MAIL_FROM`, `SUPPORT_INBOX` have DIGITALY defaults. |
+| `BREVO_API_KEY` | – | Email via Brevo's API (§5); empty = no email is sent. |
+| `BREVO_SENDER_EMAIL`, `BREVO_SENDER_NAME` | `no-reply@digitaly.fr`, `DIGITALYCloud` | Sender; the address must be verified in Brevo. |
+| `SUPPORT_INBOX` | `support@digitaly.fr` | Receives support tickets and contact-form messages. |
 | `STORAGE_DRIVER`, `STORAGE_DIR` | `filesystem` in development, `.data/storage` | Uploads; production needs `s3`. |
 | `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | – (*all or none*) | Plus `S3_ENDPOINT`, `S3_REGION` (`eu-west-3`), `S3_FORCE_PATH_STYLE` (`false`; `true` for MinIO). |
 | `UPLOAD_MAX_MB`, `UPLOAD_MAX_LARGE_MB`, `UPLOAD_MAX_EXPANDED_MB`, `UPLOAD_MAX_FILES`, `UPLOAD_TMP_DIR` | 100, 500, 2048, 50000, OS temp | Archive limits. |
@@ -155,8 +158,10 @@ Configure the Customer Portal (update payment methods, view invoices). Decide on
 Verify end to end in test mode: paid create without a card (Checkout), with a card, upgrade, downgrade, move to Free,
 deletion, a declined card (`4000 0000 0000 0002`), and repeated webhook delivery from the dashboard.
 
-**SMTP**: any provider; `SMTP_URL=smtps://user:pass@host:465`. Authenticate the `MAIL_FROM` domain (SPF, DKIM, DMARC).
-`SUPPORT_INBOX` receives tickets and contact messages.
+**Email (Brevo)**: at app.brevo.com → **SMTP & API → API Keys**, generate an API key (`xkeysib-…`) and set
+`BREVO_API_KEY` (server-side only; never in frontend or `VITE_`/`NEXT_PUBLIC_` variables). Under **Senders, domains &
+dedicated IPs**, authenticate `digitaly.fr` (DKIM, DMARC records) so `BREVO_SENDER_EMAIL` (`no-reply@digitaly.fr`) is
+accepted. Check the daily sending limit of the Brevo plan against expected signups and alerts.
 
 **S3**: private bucket with versioning; objects live under `uploads/<teamId>/` and are deleted by the platform (unused
 uploads after 24 h, others with their service). A lifecycle rule expiring noncurrent versions after 30 days keeps versioning
@@ -236,6 +241,6 @@ for dangling layers is safe at any time; don't prune tagged `dgc/*` images young
 | Paid plans greyed out | Stripe not configured or prices invalid (startup log), `catalog.paidPlansAvailable`. |
 | Checkout paid but nothing happened | Webhook endpoint/secret; receipts in `webhook_receipts`; `billing_operations` status; reconciliation runs every 15 min. |
 | GitHub "connect" returns `github=unverified` | The App must request user authorization during installation. |
-| No emails | `SMTP_URL`; `email_deliveries` status and error; provider logs. |
+| No emails | `BREVO_API_KEY` (an API key `xkeysib-…`, not an SMTP key); sender verified in Brevo; `email_deliveries` status and error (`Brevo 401` = wrong key, `400` = sender or address problem); Brevo → Transactional → Logs. |
 | Dashboard redirects to login although signed in | Session cookie not visible to the frontend host: set `COOKIE_DOMAIN` or `AUTH_PROXY_GUARD=off`. |
 | SSE disconnects every few minutes | Proxy idle timeouts must exceed the 25 s keep-alive; disable response buffering for `/v1/events` and `/logs/stream`. |

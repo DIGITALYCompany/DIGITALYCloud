@@ -1,6 +1,7 @@
 import type { ClientSession } from 'mongoose';
 import { ctx } from '../../context';
 import { EmailDelivery, type EmailDeliveryDoc } from '../../db/models';
+import { MailRejected } from '../../integrations/mail';
 import { addToOutbox } from '../../jobs/outbox';
 import { PermanentJobError, registerProcessor } from '../../jobs/registry';
 import type { Encrypted } from '../../lib/crypto';
@@ -63,11 +64,11 @@ export async function sendQueuedEmail(payload: Record<string, unknown>) {
   if (!claimed) return; // Sent already, or expired.
   const c = ctx();
   if (!c.integrations.mailer.configured) {
-    await EmailDelivery.updateOne({ _id: id }, { $set: { status: 'failed', lastError: 'Email delivery is not configured (SMTP_URL).' } });
+    await EmailDelivery.updateOne({ _id: id }, { $set: { status: 'failed', lastError: 'Email delivery is not configured (BREVO_API_KEY).' } });
     if (!c.config.production) {
       // Development aid only: the delivery stays failed; nothing claims it was sent.
       const { data } = JSON.parse(c.cipher.decrypt(encFromJson(payload.enc as never), `email:${id}`)) as { data: Record<string, string> };
-      c.log.warn({ to: claimed.to, template: claimed.template, link: data.url }, 'email not sent (SMTP not configured)');
+      c.log.warn({ to: claimed.to, template: claimed.template, link: data.url }, 'email not sent (Brevo not configured)');
     }
     throw new PermanentJobError('Email delivery is not configured');
   }
@@ -85,7 +86,8 @@ export async function sendQueuedEmail(payload: Record<string, unknown>) {
     await EmailDelivery.updateOne({ _id: id }, { $set: { status: 'sent', sentAt: new Date(), messageId: res.messageId, lastError: null } });
   } catch (err) {
     await EmailDelivery.updateOne({ _id: id }, { $set: { status: 'failed', lastError: (err as Error).message.slice(0, 500) } });
-    throw err;
+    // A rejected email (bad key, unverified sender) is not retried; the error is kept on the delivery.
+    throw err instanceof MailRejected ? new PermanentJobError(err.message) : err;
   }
 }
 

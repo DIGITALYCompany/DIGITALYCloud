@@ -38,7 +38,6 @@
     "helmet": "^8.3.0",
     "ioredis": "^6.0.0",
     "mongoose": "^9.10.4",
-    "nodemailer": "^10.0.15",
     "openid-client": "^6.8.8",
     "otpauth": "^9.5.2",
     "pino": "^10.4.0",
