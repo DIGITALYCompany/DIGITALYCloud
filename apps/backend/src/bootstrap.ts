@@ -17,6 +17,7 @@ export async function bootstrap(role: 'api' | 'worker' | 'cli'): Promise<AppCont
   const missing = Object.entries(cfg.capabilities)
     .filter(([, on]) => !on)
     .map(([k]) => k);
+  for (const w of cfg.warnings) log.warn(w);
   // Operator commands don't need the reminder on every run.
   if (missing.length) log[role === 'cli' ? 'debug' : 'warn']({ missing }, 'optional integrations not configured; their operations will report a configuration error');
   return c;
