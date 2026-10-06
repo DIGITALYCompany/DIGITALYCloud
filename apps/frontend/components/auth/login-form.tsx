@@ -19,6 +19,8 @@ const redirectTarget = () => safeRedirectPath(new URLSearchParams(window.locatio
 const GOOGLE_ERRORS: Record<string, string> = {
   google: 'Google sign-in didn’t complete. Please try again.',
   google_unavailable: 'Google sign-in isn’t available right now. Use your email and password.',
+  unavailable: 'Sign-in is temporarily unavailable on our side. Please try again in a moment.',
+  rate_limited: 'Too many sign-in attempts. Please wait a few minutes and try again.',
   google_unverified: 'Your Google account email isn’t verified, so it can’t be used to sign in.',
   google_link_unverified: 'An account with this email exists but isn’t verified yet. Sign in with your password and verify your email first, then you can use Google.',
   account_unavailable: 'This account can’t be signed in to.',

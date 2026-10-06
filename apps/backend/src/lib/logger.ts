@@ -24,6 +24,8 @@ export const REDACT_PATHS = [
   '*.accessToken',
   '*.refreshToken',
   '*.clientSecret',
+  // Redis client errors carry the failing command, e.g. AUTH with the password.
+  'err.command',
   'err.config',
   'err.request',
   'err.response',

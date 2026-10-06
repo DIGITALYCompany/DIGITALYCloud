@@ -154,11 +154,16 @@ function parseTrustProxy(v: string): boolean | number | string[] {
   return v.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
-function group(raw: RawEnv, keys: (keyof RawEnv)[], name: string, errors: string[]) {
+/**
+ * An optional integration is on only when every variable of its group is set. A partly filled group
+ * doesn't stop the server: the integration stays off (its features answer "not configured") and a
+ * warning names the missing variables.
+ */
+function group(raw: RawEnv, keys: (keyof RawEnv)[], name: string, warnings: string[]) {
   const set = keys.filter((k) => raw[k] !== undefined && raw[k] !== '');
   if (set.length === 0) return false;
   if (set.length !== keys.length) {
-    errors.push(`${name} is partially configured: missing ${keys.filter((k) => !set.includes(k)).join(', ')}`);
+    warnings.push(`${name} is disabled until these are set: ${keys.filter((k) => !set.includes(k)).join(', ')}`);
     return false;
   }
   return true;
@@ -186,6 +191,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env) {
   }
   const raw = parsed.data;
   const errors: string[] = [];
+  const warnings: string[] = [];
   const production = raw.NODE_ENV === 'production';
 
   const keyRing = (() => {
@@ -218,22 +224,26 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env) {
     errors.push((e as Error).message);
   }
 
-  const google = group(raw, ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'], 'Google OAuth', errors);
-  const github = group(raw, ['GITHUB_APP_ID', 'GITHUB_APP_SLUG', 'GITHUB_APP_PRIVATE_KEY', 'GITHUB_WEBHOOK_SECRET', 'GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET'], 'GitHub App', errors);
-  const stripe = group(raw, ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'STRIPE_PRICES'], 'Stripe', errors);
+  const google = group(raw, ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'], 'Google OAuth', warnings);
+  const github = group(raw, ['GITHUB_APP_ID', 'GITHUB_APP_SLUG', 'GITHUB_APP_PRIVATE_KEY', 'GITHUB_WEBHOOK_SECRET', 'GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET'], 'GitHub App', warnings);
+  let stripe = group(raw, ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'STRIPE_PRICES'], 'Stripe', warnings);
   const email = Boolean(raw.BREVO_API_KEY);
   if (raw.BREVO_API_KEY && !raw.BREVO_API_KEY.startsWith('xkeysib-')) {
     errors.push('BREVO_API_KEY must be a Brevo API key (xkeysib-…). SMTP keys (xsmtpsib-…) do not work with the API');
   }
   const storageDriver = raw.STORAGE_DRIVER || (raw.S3_BUCKET ? 's3' : production ? undefined : 'filesystem');
   const storage =
-    storageDriver === 'filesystem' ? true : storageDriver === 's3' ? group(raw, ['S3_BUCKET', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY'], 'S3 storage', errors) : false;
+    storageDriver === 'filesystem' ? true : storageDriver === 's3' ? group(raw, ['S3_BUCKET', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY'], 'S3 storage', warnings) : false;
   const runtime = raw.RUNTIME_DRIVER === 'docker';
 
-  const stripePrices = parseJsonObject(raw.STRIPE_PRICES, 'STRIPE_PRICES', errors);
+  const priceProblems: string[] = [];
+  const stripePrices = parseJsonObject(raw.STRIPE_PRICES, 'STRIPE_PRICES', priceProblems);
   if (stripe) {
-    for (const t of SERVICE_TYPE_IDS)
-      for (const p of PLAN_LEVELS.slice(1)) if (!stripePrices[`${t}:${p}`]) errors.push(`STRIPE_PRICES is missing ${t}:${p}`);
+    for (const t of SERVICE_TYPE_IDS) for (const p of PLAN_LEVELS.slice(1)) if (!stripePrices[`${t}:${p}`]) priceProblems.push(`missing ${t}:${p}`);
+    if (priceProblems.length) {
+      warnings.push(`Stripe is disabled until STRIPE_PRICES is complete: ${priceProblems.join(', ')}`);
+      stripe = false;
+    }
   }
   const nodeImages = { '24': 'node:24-alpine', '22': 'node:22-alpine', ...parseJsonObject(raw.RUNTIME_NODE_IMAGES, 'RUNTIME_NODE_IMAGES', errors) };
 
@@ -244,7 +254,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env) {
     else if (!capabilities[c as Capability]) errors.push(`Required capability "${c}" is not configured`);
   }
 
-  if (errors.length) throw new Error(`Invalid configuration:\n  ${errors.join('\n  ')}`);
+  if (errors.length) throw new Error(`Invalid configuration:\n  ${[...errors, ...warnings].join('\n  ')}`);
 
   return {
     ...raw,
@@ -255,6 +265,8 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env) {
     trustProxy,
     capabilities,
     requiredCapabilities: required as Capability[],
+    /** Partly configured optional integrations (logged at startup; those integrations stay off). */
+    warnings,
     storageDriver: storageDriver as 's3' | 'filesystem' | undefined,
     stripePrices,
     nodeImages: nodeImages as Record<string, string>,

@@ -132,7 +132,10 @@ export function authRouter() {
       res.redirect(302, url);
     } catch (err) {
       req.log.warn({ err }, 'google sign-in unavailable');
-      frontendRedirect(res, `/login?error=${(err as { code?: string }).code === 'GOOGLE_NOT_CONFIGURED' ? 'google_unavailable' : 'google'}&from=${encodeURIComponent(from)}`);
+      const code = (err as { code?: string }).code;
+      // GOOGLE_NOT_CONFIGURED: no Google client set up. SERVICE_UNAVAILABLE: a dependency (e.g. Redis) is down.
+      const reason = code === 'GOOGLE_NOT_CONFIGURED' ? 'google_unavailable' : code === 'SERVICE_UNAVAILABLE' ? 'unavailable' : code === 'RATE_LIMITED' ? 'rate_limited' : 'google';
+      frontendRedirect(res, `/login?error=${reason}&from=${encodeURIComponent(from)}`);
     }
   });
 
