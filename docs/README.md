@@ -27,7 +27,7 @@ them, and running both. Start here, then read the files you need.
 - **Backend** (`apps/backend`): Express 5 on Node.js 24, MongoDB replica set (Mongoose), Redis/BullMQ, SSE, Docker hosts,
   Stripe. Start with [apps/backend/README.md](../apps/backend/README.md).
 - **Shared contract** (`packages/shared`): catalog, enums, validation messages, permission matrix and DTOs used by both.
-- **Not yet verified live**: real Docker hosts and the providers (Stripe, Google, GitHub, SMTP, S3) — see [backend-progress.md](backend-progress.md).
+- **Not yet verified live**: real Docker hosts and the providers (Stripe, Google, GitHub, Brevo, S3) — see [backend-progress.md](backend-progress.md).
 
 ## Glossary
 

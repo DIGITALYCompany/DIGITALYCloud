@@ -27,7 +27,7 @@ export function eventsRouter() {
   r.get('/events', requireSession, authorize('events.stream'), async (req, res) => {
     const { user, session } = sessionUser(req);
     const team = tenantOf(req).team;
-    const slot = await claimStreamSlot(req, user._id, 'events');
+    const slot = await claimStreamSlot(user._id, 'events');
     const hub = ctx().hub;
     const teamScope = { kind: 'team' as const, id: team._id };
     const userScope = { kind: 'user' as const, id: user._id };

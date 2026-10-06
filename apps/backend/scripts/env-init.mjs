@@ -1,4 +1,4 @@
-// Creates apps/backend/.env from .env.example with freshly generated local secrets.
+// Creates apps/backend/.env from .env.example and fills the empty secret lines with freshly generated values.
 // Refuses to overwrite an existing .env (delete it first if you really want new keys:
 // data encrypted with the old ENCRYPTION_KEYS becomes unreadable).
 import { randomBytes } from 'node:crypto';
@@ -12,10 +12,12 @@ if (existsSync(target)) {
   process.exit(0);
 }
 const values = {
-  INTERNAL_API_TOKEN: randomBytes(32).toString('base64url'),
   ENCRYPTION_KEYS: `k1:${randomBytes(32).toString('base64')}`,
+  ENCRYPTION_PRIMARY_KEY_ID: 'k1',
   APP_SECRET: randomBytes(48).toString('base64url'),
+  INTERNAL_API_TOKEN: randomBytes(32).toString('base64url'),
 };
-const out = readFileSync(`${dir}.env.example`, 'utf8').replace(/^([A-Z0-9_]+)=__generate__$/gm, (_, k) => `${k}=${values[k]}`);
+const out = readFileSync(`${dir}.env.example`, 'utf8').replace(/^(ENCRYPTION_KEYS|ENCRYPTION_PRIMARY_KEY_ID|APP_SECRET|INTERNAL_API_TOKEN)=$/gm, (_, k) => `${k}=${values[k]}`);
 writeFileSync(target, out, { mode: 0o600 });
-console.log('Wrote apps/backend/.env with generated INTERNAL_API_TOKEN, ENCRYPTION_KEYS and APP_SECRET.');
+console.log('Wrote apps/backend/.env with generated ENCRYPTION_KEYS, ENCRYPTION_PRIMARY_KEY_ID, APP_SECRET and INTERNAL_API_TOKEN.');
+console.log('Now fill in MONGODB_URI and REDIS_URL (and BREVO_API_KEY for email).');

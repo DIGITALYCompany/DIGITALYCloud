@@ -1,5 +1,5 @@
 import type { AppConfig } from '../config/env';
-import { SmtpMailer, UnconfiguredMailer, type Mailer } from './mail';
+import { BrevoMailer, UnconfiguredMailer, type Mailer } from './mail';
 import { FilesystemStorage, S3Storage, type ObjectStorage } from './storage';
 import type { GoogleOidc } from './google';
 import type { BillingGateway } from './billing-gateway';
@@ -20,7 +20,9 @@ export interface Integrations {
 }
 
 export async function buildIntegrations(config: AppConfig): Promise<Integrations> {
-  const mailer = config.SMTP_URL ? new SmtpMailer(config.SMTP_URL, config.MAIL_FROM) : new UnconfiguredMailer();
+  const mailer = config.BREVO_API_KEY
+    ? new BrevoMailer(config.BREVO_API_KEY, { email: config.BREVO_SENDER_EMAIL, name: config.BREVO_SENDER_NAME })
+    : new UnconfiguredMailer();
   const storage =
     config.storageDriver === 'filesystem'
       ? new FilesystemStorage(config.STORAGE_DIR)

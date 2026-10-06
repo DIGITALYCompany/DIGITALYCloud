@@ -18,7 +18,7 @@ live integration is **unverified** · **blocked** needs infrastructure that wasn
 | Stripe | `integrations/stripe.ts` | gateway double (IT); real SDK webhook signature verification offline (IT) | **unverified** — needs test-mode keys and prices |
 | Google sign-in | `integrations/google.ts` | real OIDC flow against a local issuer (`oauth2-mock-server`, IT) | **unverified** against accounts.google.com |
 | GitHub App | `integrations/github.ts` | GitHub double (IT); real HMAC webhook verification (IT) | **unverified** — needs an App |
-| SMTP | `integrations/mail.ts` | captured mailer (IT); dev "not configured" path (UI harness) | **unverified** — Mailpit in compose not run here |
+| Brevo email | `integrations/mail.ts` | captured mailer (IT); request to Brevo's API with a dummy key answered `401 Key not found` | **sending unverified** until a real API key and verified sender are set |
 | S3 | `integrations/storage.ts` | filesystem driver (IT, UI) | **unverified** — MinIO profile not run here |
 | MongoDB / Redis | `db/`, `infra/redis.ts` | real servers in every test; prod bundle smoke; Redis outage/recovery test | ✅ local replica set; managed services unverified |
 

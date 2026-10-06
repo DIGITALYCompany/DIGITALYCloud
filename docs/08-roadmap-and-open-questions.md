@@ -38,7 +38,7 @@ Each item lists the original recommendation; the **Implemented** column records 
 | 11 | **Upload size limits** | Not defined. | 100 MB (free/starter), 500 MB (pro/business). | As recommended (500 MB for verified Pro/Business source replacements). |
 | 12 | **Invoice granularity** | `Invoice.plan` is a single label, but billing is per service. | One invoice per team per month with one line per service. `plan` becomes a summary (e.g. `3 services`). | Invoices mirror Stripe; `plan` summarises the lines. |
 | 13 | **VAT** | "VAT included" in docs. | Use Stripe Tax with prices tax-inclusive (EU OSS). Confirm with accounting. | Prices validated as tax-inclusive EUR; Stripe Tax optional (`STRIPE_AUTOMATIC_TAX`) — accounting to confirm. |
-| 14 | **Email provider** | None chosen. | Any provider with EU data residency (GDPR). Sender `no-reply@digitaly.fr`. | Any SMTP provider; operator decision. |
+| 14 | **Email provider** | None chosen. | Any provider with EU data residency (GDPR). Sender `no-reply@digitaly.fr`. | Brevo (French, EU data), through its SMTP relay. |
 | 15 | **"DIGITALY account" / SSO** | Profile says "One DIGITALY account for Cloud and every other DIGITALY service". Admin shows "DIGITALY ID". | v1: accounts live in DIGITALYCloud. Keep the auth module isolated so it can move to DIGITALY ID later. | Accounts live in DIGITALYCloud; auth module isolated. |
 | 16 | **Hosting the backend itself** | Not defined. | API + workers in containers on DIGITALY infrastructure (Lyon), MongoDB replica set with continuous backups, separate build hosts from runtime hosts. | Operator decision; MongoDB replica set + Redis, see operations.md. |
 

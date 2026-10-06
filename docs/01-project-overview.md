@@ -157,7 +157,7 @@ There are **two separate role systems**. Don't mix them up:
 | Runtime   | Docker containers on DIGITALY servers (Docker Engine API over mTLS), Traefik routing |
 | Real-time | Server-Sent Events backed by Redis Streams + Pub/Sub |
 | Payments  | Stripe (Checkout, subscription items with proration, Customer Portal, invoices, webhooks) |
-| Email     | SMTP (Mailpit locally) |
+| Email     | Brevo (transactional email API) |
 | Auth      | HttpOnly session cookie + CSRF token (dashboard), Bearer API keys (public API), Google OIDC, TOTP 2FA |
 
 Details and reasons are in [06-backend-guide.md](06-backend-guide.md) and [backend-decisions.md](backend-decisions.md).
