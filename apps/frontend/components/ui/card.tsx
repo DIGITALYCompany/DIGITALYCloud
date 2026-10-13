@@ -64,9 +64,11 @@ export function Panel({
 export function MetricRow({ label, value, children }: { label: string; value: ReactNode; children?: ReactNode }) {
   return (
     <div>
-      <div className="mb-1.5 flex items-center justify-between text-xs">
-        <span className="text-ink-400">{label}</span>
-        <span className="font-mono text-ink-100">{value}</span>
+      <div className="mb-1.5 flex items-center justify-between gap-4 text-xs">
+        <span className="shrink-0 whitespace-nowrap text-ink-400">{label}</span>
+        <span className="min-w-0 truncate text-right font-mono text-ink-100" title={typeof value === 'string' ? value : undefined}>
+          {value}
+        </span>
       </div>
       {children}
     </div>

@@ -130,8 +130,10 @@ export function ServiceOverview() {
             label="Source"
             value={
               <span className="flex items-center gap-1">
-                <SourceIcon className="h-3 w-3" />
-                {service.source === 'upload' ? 'Uploaded archive' : service.repo}
+                <SourceIcon className="h-3 w-3 shrink-0" />
+                <span className="truncate" title={service.source === 'upload' ? undefined : service.repo}>
+                  {service.source === 'upload' ? 'Uploaded archive' : service.repo}
+                </span>
               </span>
             }
           />
@@ -141,9 +143,9 @@ export function ServiceOverview() {
             label="Domain"
             value={
               service.url ? (
-                <a href={service.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-brand-200">
-                  <Globe2 className="h-3 w-3" />
-                  {service.url.replace(/^https?:\/\//, '')}
+                <a href={service.url} target="_blank" rel="noopener noreferrer" title={service.url} className="flex items-center gap-1 hover:text-brand-200">
+                  <Globe2 className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{service.url.replace(/^https?:\/\//, '')}</span>
                 </a>
               ) : (
                 '—'
