@@ -253,9 +253,9 @@ export class DockerDriver implements RuntimeDriver {
     await this.docker.getContainer(id).update({ Memory: r.memoryMb * MiB, MemorySwap: r.memoryMb * MiB, NanoCpus: r.nanoCpus });
   }
 
-  async logs(id: string, opts: { sinceSec?: number; follow: boolean; onStdout: (chunk: Buffer) => void; onStderr: (chunk: Buffer) => void }) {
+  async logs(id: string, opts: { sinceSec?: number; tail?: number; follow: boolean; onStdout: (chunk: Buffer) => void; onStderr: (chunk: Buffer) => void }) {
     const container = this.docker.getContainer(id);
-    const stream = (await container.logs({ follow: true, stdout: true, stderr: true, timestamps: false, since: opts.sinceSec ?? 0 } as never)) as unknown as Readable;
+    const stream = (await container.logs({ follow: true, stdout: true, stderr: true, timestamps: false, since: opts.sinceSec ?? 0, ...(opts.tail ? { tail: opts.tail } : {}) } as never)) as unknown as Readable;
     const out = new PassThrough();
     const err = new PassThrough();
     out.on('data', opts.onStdout);

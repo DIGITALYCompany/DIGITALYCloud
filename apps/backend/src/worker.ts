@@ -12,6 +12,8 @@ import { startCollectors } from './runtime/collectors';
  */
 async function main() {
   const c = await bootstrap('worker');
+  // Node exits on an unhandled rejection by default, stranding every in-flight deployment: log it instead.
+  process.on('unhandledRejection', (err) => c.log.error({ err }, 'unhandled rejection in worker'));
   const roles = c.config.WORKER_ROLES.length ? c.config.WORKER_ROLES : [...QUEUE_NAMES, 'collector'];
   registerAllProcessors();
   const runner = await startRunner(c, { queues: roles.filter((r): r is QueueName => (QUEUE_NAMES as readonly string[]).includes(r)) });

@@ -83,7 +83,7 @@ export async function startCollectors(c: AppContext) {
         try {
           const driver = await driverFor(got);
           const stopEvents = await driver.events(
-            (e) => void onEvent(e.containerId, e.action, e.exitCode),
+            (e) => void onEvent(e.containerId, e.action, e.exitCode).catch((err: unknown) => c.log.warn({ err, containerId: e.containerId }, 'runtime event handling failed')),
             (err) => c.log.warn({ err, server: s._id }, 'runtime event stream interrupted'),
           );
           leased.set(s._id, { server: got, driver, stopEvents });
@@ -114,7 +114,7 @@ export async function startCollectors(c: AppContext) {
         await driver.ping();
         await Server.updateOne({ _id: server._id }, { $set: { lastHeartbeatAt: new Date(), lastError: null } });
       } catch {
-        await Server.updateOne({ _id: server._id }, { $set: { lastError: 'Docker endpoint unreachable' } });
+        await Server.updateOne({ _id: server._id }, { $set: { lastError: 'Docker endpoint unreachable' } }).catch(() => {});
       }
     }
   }
@@ -148,7 +148,7 @@ export async function startCollectors(c: AppContext) {
           if (!isDuplicateKey(e)) c.log.warn({ err: e }, 'runtime log insert failed');
         }
         await c.hub.publishRaw(logsScope(svc._id), 'log', docs.map((d) => ({ id: d.seq, ts: d.ts.getTime(), level: d.level, text: d.text })));
-      });
+      }).catch((e: unknown) => c.log.warn({ err: e, serviceId: svc._id }, 'runtime log flush failed'));
     };
     const timer = setInterval(flush, 500);
     const push = (stream: 'stdout' | 'stderr') =>
@@ -297,7 +297,7 @@ export async function startCollectors(c: AppContext) {
   await claimServers();
   await heartbeat();
   const leaseTimer = setInterval(() => void claimServers().catch((err: unknown) => c.log.warn({ err }, 'lease renewal failed')), LEASE_MS / 3);
-  const beatTimer = setInterval(() => void heartbeat(), HEARTBEAT_MS);
+  const beatTimer = setInterval(() => void heartbeat().catch((err: unknown) => c.log.warn({ err }, 'heartbeat failed')), HEARTBEAT_MS);
   const loop = (async () => {
     while (running) {
       const t0 = Date.now();

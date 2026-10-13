@@ -21,6 +21,7 @@ import { planResources, promote, release, reserve } from './capacity';
 import { DeployLog } from './deploy-log';
 import { driverFor, type ContainerSpec, type RuntimeDriver } from './driver';
 import { assertPublicRegistry } from './network-policy';
+import { LineSplitter } from './redact';
 
 /** A deployment failure with a reason the user can act on (shown in the UI and notification). */
 export class DeployError extends Error {
@@ -124,10 +125,70 @@ export async function healthCheck(driver: RuntimeDriver, containerId: string, po
   return { hostPort: final.hostPort, startedAt: final.startedAt ?? new Date() };
 }
 
+const CRASH_OUTPUT_LINES = 20;
+const NOT_VARIABLES = new Set(['ERROR', 'ERR', 'WARN', 'WARNING', 'FATAL', 'INFO', 'DEBUG', 'ENV']);
+
+/** The candidate's last output lines, read before it is removed (best effort, bounded in time). */
+async function lastOutput(driver: RuntimeDriver, containerId: string) {
+  const lines: string[] = [];
+  const split = new LineSplitter((l) => {
+    if (l.trim()) lines.push(l);
+  });
+  try {
+    const handle = await driver.logs(containerId, { follow: false, tail: CRASH_OUTPUT_LINES, onStdout: (b) => split.push(b), onStderr: (b) => split.push(b) });
+    // An exited container ends the stream by itself; one that is still running is cut off.
+    await Promise.race([handle.done, sleep(3000)]);
+    handle.stop();
+    split.flush();
+  } catch {
+    // The failure is still reported, just without the app's output.
+  }
+  return lines.slice(-CRASH_OUTPUT_LINES);
+}
+
+/** A reason in the app's own words: a missing variable is named, otherwise its error line is quoted. */
+export function crashReason(base: string, output: string[]) {
+  for (const line of output) {
+    if (!/\b(env|environment)\b/i.test(line) || !/\b(missing|required|not set|not defined|undefined)\b/i.test(line)) continue;
+    const names = [...new Set(line.match(/\b[A-Z][A-Z0-9_]{2,}\b/g) ?? [])].filter((n) => !NOT_VARIABLES.has(n));
+    if (names.length === 0) continue; // e.g. the source line `throw new Error(\`Missing … ${key}\`)`
+    const list = names.join(', ');
+    return `Your app stopped because the environment variable${names.length > 1 ? 's' : ''} ${list} ${names.length > 1 ? 'are' : 'is'} missing. Add ${names.length > 1 ? 'them' : 'it'} under Environment, then deploy again.`;
+  }
+  const error = output.find((l) => /^\s*[\w.]*(Error|Exception)\b\s*(\[[^\]]*\])?\s*:/.test(l)) ?? output.filter((l) => !/^\s*(at |Node\.js v)/.test(l)).at(-1);
+  return error ? `${base} Your app reported: ${error.trim().slice(0, 300)}` : base;
+}
+
+/** Copies the crashed app's output into the build log so the failure explains itself. */
+async function explainCrash(err: DeployError, driver: RuntimeDriver, containerId: string, log: DeployLog) {
+  const output = (await lastOutput(driver, containerId)).map((l) => log.redact(l));
+  if (output.length === 0) return err;
+  log.step('Last output from your app:');
+  for (const l of output) log.line(l);
+  return new DeployError(err.code, crashReason(err.message, output));
+}
+
 async function setStage(dep: DeploymentDoc, stage: DeployStage, extra: Partial<DeploymentDoc> = {}) {
   const updated = await Deployment.findOneAndUpdate({ _id: dep._id, status: 'building' }, { $set: { stage, ...extra } }).lean<DeploymentDoc>();
-  if (updated) await ctx().hub.publish({ kind: 'team', id: dep.teamId }, 'deployment.updated', deploymentDto(updated));
+  // Progress events are cosmetic (the next one corrects a missed one): a Redis hiccup must not fail the build.
+  if (updated) await ctx().hub.publish({ kind: 'team', id: dep.teamId }, 'deployment.updated', deploymentDto(updated)).catch((err: unknown) => ctx().log.warn({ err, deploymentId: dep._id }, 'deployment progress event not published'));
   return updated;
+}
+
+/**
+ * Publishes a committed result. The database already holds it, so a Redis hiccup must neither fail
+ * the job nor drop the event the dashboard is waiting for: retry with backoff, then log.
+ */
+async function announce(deploymentId: string, publish: () => Promise<unknown>) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await publish();
+      return;
+    } catch (err) {
+      if (attempt >= 4) return void ctx().log.error({ err, deploymentId }, 'deployment result event not published');
+      await sleep(500 * 2 ** attempt);
+    }
+  }
 }
 
 async function assertCurrent(serviceId: string, generation: number) {
@@ -277,7 +338,9 @@ export async function runDeployment(deploymentId: string, generation: number, at
     // 5. health_check ---------------------------------------------------------------------------
     await setStage(dep, 'health_check');
     log.step(`Waiting ${ctx().config.HEALTH_CHECK_SECONDS}s for the process to stay healthy`);
-    const health = await healthCheck(state.driver, state.candidateId, dep.config.port, state.server, log);
+    const health = await healthCheck(state.driver, state.candidateId, dep.config.port, state.server, log).catch(async (e: unknown) => {
+      throw e instanceof DeployError ? await explainCrash(e, state.driver!, state.candidateId!, log) : e;
+    });
     log.step('Health check passed');
 
     // Commit (fenced by generation) -------------------------------------------------------------
@@ -328,12 +391,14 @@ export async function runDeployment(deploymentId: string, generation: number, at
     state.reservation = undefined;
     const candidate = state.candidateId;
     state.candidateId = undefined;
+    // The handoff is final once committed: a later error must not restart the previous version.
+    state.handedOff = undefined;
     deploymentsFinished.inc({ result: 'success' });
     log.step('Deployment successful');
     await log.close();
     await dispatchNow(ctx().queues, outbox);
-    if (committed) await ctx().hub.publish({ kind: 'team', id: dep.teamId }, 'deployment.updated', deploymentDto(committed));
-    await publishService(svc._id);
+    if (committed) await announce(dep._id, () => ctx().hub.publish({ kind: 'team', id: dep.teamId }, 'deployment.updated', deploymentDto(committed)));
+    await announce(dep._id, () => publishService(svc._id));
 
     // Retire the previous container: HTTP services drain after the route switch.
     if (previous && previous.containerId !== candidate) {
@@ -450,8 +515,8 @@ export async function failDeployment(dep: DeploymentDoc, generation: number, cod
   await log?.close();
   await dispatchNow(ctx().queues, outbox);
   const updated = await Deployment.findById(dep._id).lean<DeploymentDoc>();
-  if (updated) await ctx().hub.publish({ kind: 'team', id: dep.teamId }, 'deployment.updated', deploymentDto(updated));
-  await publishService(dep.serviceId);
+  if (updated) await announce(dep._id, () => ctx().hub.publish({ kind: 'team', id: dep.teamId }, 'deployment.updated', deploymentDto(updated)));
+  await announce(dep._id, () => publishService(dep.serviceId));
   await deployPendingPush(dep.serviceId);
 }
 
