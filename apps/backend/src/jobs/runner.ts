@@ -47,7 +47,7 @@ export async function startRunner(c: AppContext, opts: RunnerOptions = {}) {
       if (!job) return;
       const exhausted = err instanceof UnrecoverableError || job.attemptsMade >= (job.opts.attempts ?? 1);
       c.log[exhausted ? 'error' : 'warn']({ err, job: job.name, jobId: job.id, attempts: job.attemptsMade }, exhausted ? 'job dead-lettered' : 'job failed, will retry');
-      if (exhausted) void markDead((job.data as { outboxId?: string })?.outboxId, err.message);
+      if (exhausted) void markDead((job.data as { outboxId?: string })?.outboxId, err.message).catch(() => {});
     });
     worker.on('error', (err) => c.log.error({ err, queue: name }, 'worker error'));
     workers.push(worker);

@@ -12,6 +12,7 @@ import type {
   ContactInput,
   CreateServiceInput,
   CreatedApiKey,
+  CustomDomainDto,
   DeployRequest,
   DeploymentDto,
   EnvVarDto,
@@ -123,6 +124,12 @@ export const api = {
     restart: async (id: string) => toService(await http.post<ServiceDto>(`/services/${enc(id)}/restart`)),
     remove: (id: string) => http.del(`/services/${enc(id)}`),
     setEnv: async (id: string, env: EnvVarInput[]) => (await http.put<{ data: EnvVarDto[] }>(`/services/${enc(id)}/env`, { env })).data,
+    domains: {
+      list: async (id: string) => (await http.get<ListResponse<CustomDomainDto>>(`/services/${enc(id)}/domains`)).data,
+      add: (id: string, hostname: string) => http.post<CustomDomainDto>(`/services/${enc(id)}/domains`, { hostname }),
+      verify: (id: string, domainId: string) => http.post<CustomDomainDto>(`/services/${enc(id)}/domains/${enc(domainId)}/verify`),
+      remove: (id: string, domainId: string) => http.del(`/services/${enc(id)}/domains/${enc(domainId)}`),
+    },
     deploy: async (id: string, input: DeployRequest, idempotencyKey: string) => {
       const r = await http.post<{ service: ServiceDto | null; deployment: DeploymentDto }>(`/services/${enc(id)}/deploy`, input, { headers: { 'Idempotency-Key': idempotencyKey } });
       return { service: r.service ? toService(r.service) : null, deployment: r.deployment };

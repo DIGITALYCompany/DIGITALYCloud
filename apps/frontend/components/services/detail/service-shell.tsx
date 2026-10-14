@@ -126,7 +126,8 @@ export function ServiceShell({ id, children }: { id: string; children: ReactNode
           { href: `${base}/logs`, label: 'Logs', icon: <ScrollText className="h-4 w-4" /> },
           { href: `${base}/deployments`, label: 'Deployments', icon: <Rocket className="h-4 w-4" /> },
           { href: `${base}/metrics`, label: 'Metrics', icon: <BarChart3 className="h-4 w-4" /> },
-          { href: `${base}/environment`, label: 'Environment', icon: <KeyRound className="h-4 w-4" /> },
+          // Static sites get no environment variables (not at build time, and the file server needs none).
+          ...(service.type === 'static' ? [] : [{ href: `${base}/environment` as const, label: 'Environment', icon: <KeyRound className="h-4 w-4" /> }]),
           { href: `${base}/settings`, label: 'Settings', icon: <Settings className="h-4 w-4" /> },
         ]}
       />

@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { isIP } from 'node:net';
 import { z } from 'zod';
 import { PLAN_LEVELS, SERVICE_TYPE_IDS } from '@digitalycloud/shared';
 
@@ -101,6 +102,8 @@ const schema = z.object({
   PUBLIC_RUNTIME_DOMAIN: z.string().default('digitaly.app'),
   PUBLIC_RUNTIME_SCHEME: z.enum(['https', 'http']).default('https'),
   PUBLIC_RUNTIME_PORT: optional,
+  /** Public IPs of the proxy edge, comma-separated: shown as A records for root custom domains. */
+  PUBLIC_EDGE_IPS: optional,
   REGISTRY_URL: optional,
   REGISTRY_USERNAME: optional,
   REGISTRY_PASSWORD: optional,
@@ -246,6 +249,8 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env) {
     }
   }
   const nodeImages = { '24': 'node:24-alpine', '22': 'node:22-alpine', ...parseJsonObject(raw.RUNTIME_NODE_IMAGES, 'RUNTIME_NODE_IMAGES', errors) };
+  const edgeIps = (raw.PUBLIC_EDGE_IPS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  for (const ip of edgeIps) if (!isIP(ip)) errors.push(`PUBLIC_EDGE_IPS has an invalid IP address: ${ip}`);
 
   const capabilities: Record<Capability, boolean> = { google, github, stripe, email, storage, runtime };
   const required = raw.REQUIRED_CAPABILITIES.length ? raw.REQUIRED_CAPABILITIES : production ? ['email', 'storage', 'runtime'] : [];
@@ -270,6 +275,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env) {
     storageDriver: storageDriver as 's3' | 'filesystem' | undefined,
     stripePrices,
     nodeImages: nodeImages as Record<string, string>,
+    edgeIps,
     googleRedirectUri: raw.GOOGLE_REDIRECT_URI ?? `${raw.API_PUBLIC_URL.replace(/\/$/, '')}/v1/auth/google/callback`,
   };
 }

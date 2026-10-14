@@ -3,6 +3,7 @@ import { withTransaction } from '../db/connection';
 import {
   CapacityReservation,
   Counter,
+  CustomDomain,
   Deployment,
   DeploymentLog,
   EnvVar,
@@ -57,6 +58,7 @@ export async function purgeService(serviceId: string) {
     await Upload.deleteOne({ _id: u._id });
   }
   await EnvVar.deleteMany({ serviceId });
+  await CustomDomain.deleteMany({ serviceId });
   await DeploymentLog.deleteMany({ serviceId });
   await RuntimeLog.deleteMany({ serviceId });
   await MetricSample.deleteMany({ serviceId });

@@ -1,6 +1,6 @@
 /** Enumerations shared by the API contract. Arrays are the source of truth; types derive from them. */
 
-export const SERVICE_TYPE_IDS = ['discord', 'node', 'api', 'worker'] as const;
+export const SERVICE_TYPE_IDS = ['discord', 'node', 'api', 'worker', 'static'] as const;
 export type ServiceType = (typeof SERVICE_TYPE_IDS)[number];
 
 export const SERVICE_STATUSES = ['running', 'stopped', 'deploying', 'failed'] as const;
@@ -12,6 +12,10 @@ export type PlanId = (typeof PLAN_LEVELS)[number];
 
 export const SOURCE_TYPES = ['github', 'upload', 'docker'] as const;
 export type SourceType = (typeof SOURCE_TYPES)[number];
+
+/** `pending` until both DNS records check out; `failed` after a week without them (retry with Verify). */
+export const CUSTOM_DOMAIN_STATUSES = ['pending', 'active', 'failed'] as const;
+export type CustomDomainStatus = (typeof CUSTOM_DOMAIN_STATUSES)[number];
 
 export const DEPLOYMENT_STATUSES = ['building', 'success', 'failed'] as const;
 export type DeploymentStatus = (typeof DEPLOYMENT_STATUSES)[number];

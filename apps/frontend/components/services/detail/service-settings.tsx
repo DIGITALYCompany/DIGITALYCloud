@@ -14,6 +14,7 @@ import { formatMb } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { isSupportedNodeVersion, planAllowsAutoRestart, typeRequiresPort, type NodeVersion } from '@digitalycloud/shared';
 import type { PlanId, Service } from '@/lib/types';
+import { DomainsSection } from './service-domains';
 import { useService } from './service-shell';
 
 function Section({ title, description, children }: { title: string; description: string; children: ReactNode }) {
@@ -28,7 +29,7 @@ function Section({ title, description, children }: { title: string; description:
   );
 }
 
-const formFrom = (s: Service) => ({ name: s.name, startCommand: s.startCommand, nodeVersion: s.nodeVersion as string, port: s.port ? String(s.port) : '', branch: s.branch ?? '' });
+const formFrom = (s: Service) => ({ name: s.name, startCommand: s.startCommand, nodeVersion: s.nodeVersion as string, port: s.port ? String(s.port) : '', publishDir: s.publishDir ?? '', branch: s.branch ?? '' });
 
 function GeneralSection({ service }: { service: Service }) {
   const { update } = useCloud();
@@ -46,6 +47,7 @@ function GeneralSection({ service }: { service: Service }) {
     if (form.startCommand !== current.startCommand) patch.startCommand = form.startCommand;
     if (form.nodeVersion !== current.nodeVersion) patch.nodeVersion = form.nodeVersion as NodeVersion;
     if (form.port !== current.port) patch.port = form.port ? +form.port : null;
+    if (form.publishDir !== current.publishDir) patch.publishDir = form.publishDir.trim() || null;
     if (form.branch !== current.branch) patch.branch = form.branch;
     setSaving(true);
     try {
@@ -81,24 +83,36 @@ function GeneralSection({ service }: { service: Service }) {
             disabled={service.source !== 'github'}
           />
         </div>
-        <div>
-          <label className="label" htmlFor="svc-command">
-            Start command
-          </label>
-          <input id="svc-command" className="input font-mono" value={form.startCommand} onChange={(e) => setForm({ ...form, startCommand: e.target.value })} />
-        </div>
-        <div>
-          <label className="label" htmlFor="svc-port">
-            Port
-          </label>
-          <input
-            id="svc-port"
-            className="input font-mono"
-            value={form.port}
-            placeholder={typeRequiresPort(service.type) ? '3000' : 'None'}
-            onChange={(e) => setForm({ ...form, port: e.target.value.replace(/\D/g, '') })}
-          />
-        </div>
+        {service.type === 'static' ? (
+          <div>
+            <label className="label" htmlFor="svc-publish">
+              Publish directory
+            </label>
+            <input id="svc-publish" className="input font-mono" value={form.publishDir} placeholder="Detect automatically" onChange={(e) => setForm({ ...form, publishDir: e.target.value })} />
+            <p className="mt-1.5 text-xs text-ink-500">The folder with your site’s index.html, e.g. dist or build.</p>
+          </div>
+        ) : (
+          <>
+            <div>
+              <label className="label" htmlFor="svc-command">
+                Start command
+              </label>
+              <input id="svc-command" className="input font-mono" value={form.startCommand} onChange={(e) => setForm({ ...form, startCommand: e.target.value })} />
+            </div>
+            <div>
+              <label className="label" htmlFor="svc-port">
+                Port
+              </label>
+              <input
+                id="svc-port"
+                className="input font-mono"
+                value={form.port}
+                placeholder={typeRequiresPort(service.type) ? '3000' : 'None'}
+                onChange={(e) => setForm({ ...form, port: e.target.value.replace(/\D/g, '') })}
+              />
+            </div>
+          </>
+        )}
         <div>
           <label className="label" htmlFor="svc-node">
             Node.js version
@@ -235,6 +249,7 @@ export function ServiceSettings() {
     <div className="space-y-4">
       <GeneralSection service={service} />
       <ResourcesSection key={service.plan} service={service} />
+      {service.port !== null && <DomainsSection service={service} />}
       <BehaviorSection service={service} />
 
       <div className="card grid gap-6 border-danger-500/20 p-6 lg:grid-cols-[280px_1fr]">

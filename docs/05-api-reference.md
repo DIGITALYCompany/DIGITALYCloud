@@ -144,6 +144,10 @@ Auth column: `public` · `session` · `key:read` / `key:full` (API key allowed w
 | POST   | `/services/:id/restart` | session, key:full | `services.restart` | `use-service-actions.tsx` |
 | POST   | `/services/:id/plan` | session | `services.update({ plan })` | `change-plan-modal.tsx`, `service-settings.tsx` |
 | PUT    | `/services/:id/env` | session, key:full | `services.setEnv` | `service-environment.tsx` |
+| GET    | `/services/:id/domains` | session, key:read | — (new) | `service-domains.tsx` |
+| POST   | `/services/:id/domains` | session, key:full | — (new) | `service-domains.tsx` |
+| POST   | `/services/:id/domains/:domainId/verify` | session, key:full | — (new) | `service-domains.tsx` |
+| DELETE | `/services/:id/domains/:domainId` | session, key:full | — (new) | `service-domains.tsx` |
 | **Deployments** |||||
 | GET    | `/deployments` | session, key:read | `deployments.list` | cloud provider, `/deployments` |
 | GET    | `/deployments/:id` | session, key:read | — (logs were inline) | `deployment-item.tsx` |
@@ -413,7 +417,9 @@ The backend's plan and region tables. **The backend validates against these**, a
   "nodeVersion": "22 LTS",
   "startCommand": "node index.js",
   "port": null,
+  "publishDir": null,
   "url": null,
+  "domains": [],
   "plan": "starter",
   "source": "github",
   "repo": "mehdi-f/syncbot",
@@ -428,6 +434,7 @@ The backend's plan and region tables. **The backend validates against these**, a
 ```
 
 - `cpu`, `ramMb`, `storageMb` are the **latest sample** from the metrics collector (Redis cache). Live updates arrive through `/events`.
+- `runtime` is `Node.js`, `Docker` or `Static`. `publishDir` is only set for static sites (`null` = detected). `domains` lists verified custom domains that receive traffic (empty on the free plan).
 - `env` is included for session requests. Secret values are redacted (`""`) for viewers. `env` is **omitted** for API-key requests.
 
 ### `GET /services`
@@ -465,11 +472,12 @@ Request (Proposed changes from the mock's `CreateServiceInput`: `regionId` repla
 | Field | Rule |
 | ----- | ---- |
 | `name` | `^[A-Za-z][\w-]{1,31}$`, unique per team (case-insensitive) → `409` `You already have a service with this name.` |
-| `type` | ServiceType |
+| `type` | ServiceType. `static` = static site: `source` must be `github` or `upload`; `startCommand`/`port` are ignored (fixed by the platform) and may be omitted; `env` is ignored. |
 | `source` | `github` → `repo` matches `owner/repo`, `branch` required, repo reachable through the team's GitHub installation (or public). `upload` → `uploadId` belongs to the team; `repo` is set to the upload's file name. `docker` → `repo` is an image ref (≥ 3 chars). |
 | `nodeVersion` | One of `nodeVersions` (ignored for Docker) |
 | `startCommand` | Non-empty |
 | `port` | `null` or 1–65535. **Required** for `api` and `node`. |
+| `publishDir` | Static sites only, optional: a relative folder (`dist`, `site/public`). Empty/`null` publishes the first of `dist`, `build`, `out`, `public`, `_site` holding an `index.html`, else the root. |
 | `plan` | PlanId. If the plan's price > 0 and the team has no payment method → `402 PAYMENT_METHOD_REQUIRED` + `checkoutUrl`. |
 | `regionId` | Known region → else `400` `Unknown region.`. Allowed for plan → else `400 REGION_NOT_ALLOWED` `{City} isn’t available on the {Plan} plan.` |
 | `env` | Keys valid and unique. Server assigns ids. |
@@ -490,7 +498,7 @@ Side effects: generates the slug `id` (`slugify(name)`, plus `-xxxx` on collisio
 
 **Replaces** `api.services.update(id, patch)` for **settings only**.
 
-Allowed fields (anything else → `400`): `name`, `startCommand`, `nodeVersion`, `port`, `branch` (GitHub only), `autoDeploy` (GitHub only), `autoRestart` (paid plans only).
+Allowed fields (anything else → `400`): `name`, `startCommand`, `nodeVersion`, `port`, `publishDir` (static sites only; static sites reject `startCommand`/`port`), `branch` (GitHub only), `autoDeploy` (GitHub only), `autoRestart` (paid plans only).
 
 ```json
 { "name": "SyncBot", "startCommand": "node index.js", "nodeVersion": "22 LTS", "port": null, "branch": "main" }
@@ -544,6 +552,23 @@ Stops and removes containers, deletes deployments, env vars, logs and metrics, a
 `200 { "data": EnvVar[] }`: the saved list, with server ids for new rows.
 Errors: `400` `Keys must use uppercase letters, numbers and underscores.` · `409` `{KEY} already exists.` · `400` reserved `DIGITALY_*` key.
 Values are encrypted at rest. A restart is **not** automatic (the UI says "Restart the service to apply changes"; see the open question about the public docs saying otherwise).
+
+### Custom domains
+
+`GET /services/:id/domains` → `200 { "data": CustomDomain[] }` · `POST /services/:id/domains` `{ "hostname": "www.example.com" }` → `201 CustomDomain` ·
+`POST /services/:id/domains/:domainId/verify` → `200 CustomDomain` (checks DNS now) · `DELETE /services/:id/domains/:domainId` → `204`.
+
+```json
+{ "id": "dom_k2…", "serviceId": "portfolio", "hostname": "www.example.com", "status": "pending", "apex": false,
+  "records": [
+    { "purpose": "routing", "type": "CNAME", "name": "www.example.com", "value": "portfolio.digitaly.app", "ok": false },
+    { "purpose": "ownership", "type": "TXT", "name": "_digitaly-verify.www.example.com", "value": "dgc-verify=…", "ok": true } ],
+  "message": "www.example.com doesn’t point anywhere yet. Add the CNAME record.", "createdAt": 1791201600000, "verifiedAt": null, "checkedAt": 1791201605000 }
+```
+
+- Paid plans only (`403 PLAN_UPGRADE_REQUIRED`), HTTP services only (a port, or a static site), at most 5 per service. A hostname belongs to one service platform-wide (`409 DOMAIN_TAKEN`); platform hostnames are refused.
+- Root domains (`example.com`) get `A` records to `PUBLIC_EDGE_IPS`, or an `ALIAS`/`ANAME` to the service host when that is unset.
+- `pending` → `active` once both records are found (checked right away, then every minute for an hour and every 10 minutes for 7 days; after that `failed` until **Verify**). Active domains are re-checked every 6 h (status kept). Active domains of paid services get a Traefik router with a per-hostname certificate (`domains` resolver). Moving to the free plan keeps them but stops routing.
 
 ---
 

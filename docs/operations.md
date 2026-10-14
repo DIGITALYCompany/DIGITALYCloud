@@ -74,6 +74,7 @@ Groups marked *all or none* must be filled completely or left empty (a partial g
 | `UPLOAD_MAX_MB`, `UPLOAD_MAX_LARGE_MB`, `UPLOAD_MAX_EXPANDED_MB`, `UPLOAD_MAX_FILES`, `UPLOAD_TMP_DIR` | 100, 500, 2048, 50000, OS temp | Archive limits. |
 | `RUNTIME_DRIVER` | `disabled` | `docker` to run workloads on registered hosts. |
 | `PUBLIC_RUNTIME_DOMAIN`, `PUBLIC_RUNTIME_SCHEME`, `PUBLIC_RUNTIME_PORT` | `digitaly.app`, `https`, – | Public service URLs `{id}.{domain}`. |
+| `PUBLIC_EDGE_IPS` | – | Public IPs of the Traefik edge, comma-separated: shown as `A` records for root custom domains (`example.com`) and accepted by the DNS check. Without it, root domains are told to use ALIAS/ANAME. |
 | `REGISTRY_URL`, `REGISTRY_USERNAME`, `REGISTRY_PASSWORD` | – | Image registry for multi-host setups. |
 | `RUNTIME_NODE_IMAGES` | `node:24-alpine`, `node:22-alpine` | JSON map of Node majors to (digest-pinned) base images. |
 | `RUNTIME_PROBE_IMAGE`, `RUNTIME_OCI_RUNTIME`, `RUNTIME_CONTAINER_USER` | `busybox:1.37`, –, `10001:10001` | Quota probe image, optional `runsc`, container user. |
@@ -132,11 +133,19 @@ log redaction of a secret env value), an uploaded archive and a public Docker im
         email: ops@digitaly.fr
         storage: /data/acme.json
         dnsChallenge: { provider: <your DNS provider> }
+    domains: # customers' own hostnames, one certificate each
+      acme:
+        email: ops@digitaly.fr
+        storage: /data/acme-domains.json
+        tlsChallenge: {}
   ```
 
   The feed's routers reference the `wildcard` resolver with `main: digitaly.app, sans: ['*.digitaly.app']`. Routes appear only
   after a candidate container passes its health check and switch atomically on deploys (old version drained for
   `ROUTE_DRAIN_SECONDS`).
+- Custom domains: verified hostnames (TXT `_digitaly-verify.<host>` + CNAME to `{id}.digitaly.app`, or A records to
+  `PUBLIC_EDGE_IPS` for root domains) get a router with the `domains` resolver above (TLS-ALPN on :443, so port 443 must be
+  reachable from the internet). Only paid services are routed. Run `npm run db:migrate` once to create `custom_domains`.
 
 ## 5. Provider registration
 
@@ -150,7 +159,7 @@ log redaction of a secret env value), an uploaded archive and a public Docker im
 newlines may be written as `\n`).
 
 **Stripe**: create one product per service type and plan with a **monthly EUR, tax-inclusive** price equal to the catalog
-(`packages/shared/src/catalog.ts`); put the price ids in `STRIPE_PRICES` (`{"discord:starter":"price_…", …}` — all 12 paid plans;
+(`packages/shared/src/catalog.ts`); put the price ids in `STRIPE_PRICES` (`{"discord:starter":"price_…", …}` — all 15 paid plans, including `static:starter`, `static:pro`, `static:business`;
 startup validates amount, currency and interval). Webhook endpoint `${API_PUBLIC_URL}/v1/webhooks/stripe` with events
 `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.expired`,
 `checkout.session.async_payment_failed`, `invoice.*`, `customer.subscription.*`, `payment_method.*`, `customer.updated`.

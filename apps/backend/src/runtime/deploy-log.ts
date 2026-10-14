@@ -31,6 +31,10 @@ export class DeployLog {
     this.redactor = new Redactor(secrets);
   }
 
+  redact(text: string) {
+    return this.redactor.redact(text);
+  }
+
   line(text: string) {
     if (this.next > MAX_LINES) {
       this.dropped++;
@@ -58,17 +62,21 @@ export class DeployLog {
     this.timer = null;
     const batch = this.pending.splice(0);
     if (batch.length === 0) return this.flushing;
-    this.flushing = this.flushing.then(async () => {
-      try {
-        await DeploymentLog.insertMany(batch, { ordered: false });
-      } catch (e) {
-        // Duplicate line numbers after a retry are expected and ignored.
-        if ((e as { code?: number }).code !== 11000 && !(e as { writeErrors?: unknown[] }).writeErrors) throw e;
-      }
-      await Deployment.updateOne({ _id: this.dep._id }, { $max: { logLines: batch[batch.length - 1]!.lineNo } });
-      const hub = ctx().hub;
-      for (const l of batch) await hub.publish({ kind: 'team', id: this.dep.teamId }, 'deployment.log', { deploymentId: this.dep._id, lineNo: l.lineNo, text: l.text }, { replay: false });
-    });
+    // Never rejects: flushes also run from a timer, and a lost log line must not fail the deployment
+    // (or, as an unhandled rejection, the worker). Viewers reload the stored log when it finishes.
+    this.flushing = this.flushing
+      .then(async () => {
+        try {
+          await DeploymentLog.insertMany(batch, { ordered: false });
+        } catch (e) {
+          // Duplicate line numbers after a retry are expected and ignored.
+          if ((e as { code?: number }).code !== 11000 && !(e as { writeErrors?: unknown[] }).writeErrors) throw e;
+        }
+        await Deployment.updateOne({ _id: this.dep._id }, { $max: { logLines: batch[batch.length - 1]!.lineNo } });
+        const hub = ctx().hub;
+        for (const l of batch) await hub.publish({ kind: 'team', id: this.dep.teamId }, 'deployment.log', { deploymentId: this.dep._id, lineNo: l.lineNo, text: l.text }, { replay: false });
+      })
+      .catch((err: unknown) => ctx().log.warn({ err, deploymentId: this.dep._id }, 'build log flush failed'));
     return this.flushing;
   }
 

@@ -91,7 +91,7 @@ export interface RuntimeDriver {
   inspectContainer(id: string, opts?: { size?: boolean }): Promise<ContainerState | null>;
   listManaged(filter?: Record<string, string>): Promise<ManagedContainer[]>;
   updateResources(id: string, r: { memoryMb: number; nanoCpus: number }): Promise<void>;
-  logs(id: string, opts: { sinceSec?: number; follow: boolean; onStdout: (chunk: Buffer) => void; onStderr: (chunk: Buffer) => void }): Promise<{ done: Promise<void>; stop: () => void }>;
+  logs(id: string, opts: { sinceSec?: number; tail?: number; follow: boolean; onStdout: (chunk: Buffer) => void; onStderr: (chunk: Buffer) => void }): Promise<{ done: Promise<void>; stop: () => void }>;
   stats(id: string): Promise<RawStats | null>;
   events(onEvent: (e: RuntimeEvent) => void, onError: (err: Error) => void): Promise<() => void>;
   /** True when the storage driver accepts a per-container size quota. */

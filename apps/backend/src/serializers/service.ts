@@ -1,6 +1,6 @@
-import { getRegion, planLimits, regionLabel, type EnvVarDto, type ServiceDto } from '@digitalycloud/shared';
+import { getRegion, planAllowsCustomDomains, planLimits, regionLabel, type EnvVarDto, type ServiceDto } from '@digitalycloud/shared';
 import { ctx } from '../context';
-import { EnvVar, Server, type EnvVarDoc, type ServerDoc, type ServiceDoc } from '../db/models';
+import { CustomDomain, EnvVar, Server, type CustomDomainDoc, type EnvVarDoc, type ServerDoc, type ServiceDoc } from '../db/models';
 import { envAad, envDto, redactAll } from '../modules/services/env.service';
 
 /** Latest live sample written by the metrics collector (`svc:<id>:live`). */
@@ -30,6 +30,7 @@ interface SerializeContext {
   live: Map<string, LiveSample>;
   servers: Map<string, string>;
   env: Map<string, EnvVarDto[]>;
+  domains: Map<string, string[]>;
 }
 
 export function serializeService(s: ServiceDoc, c: SerializeContext, envMode: EnvMode): ServiceDto {
@@ -55,11 +56,14 @@ export function serializeService(s: ServiceDoc, c: SerializeContext, envMode: En
     region: region ? regionLabel(region) : s.regionId,
     regionId: s.regionId,
     server: (s.runtime?.serverId && c.servers.get(s.runtime.serverId)) || '',
-    runtime: s.source === 'docker' ? 'Docker' : 'Node.js',
+    runtime: s.type === 'static' ? 'Static' : s.source === 'docker' ? 'Docker' : 'Node.js',
     nodeVersion: s.nodeVersion,
     startCommand: s.startCommand,
     port: s.port,
+    publishDir: s.type === 'static' ? (s.publishDir ?? null) : null,
     url: serviceUrl(s._id, s.port),
+    // Domains of a service moved to the free plan stay saved but receive no traffic.
+    domains: planAllowsCustomDomains(s.plan) ? (c.domains.get(s._id) ?? []) : [],
     plan: s.plan,
     source: s.source,
     repo: s.repo,
@@ -81,7 +85,7 @@ export function serializeService(s: ServiceDoc, c: SerializeContext, envMode: En
 /** Loads everything needed to serialize a batch of services with one query per source. */
 export async function serializeServices(services: ServiceDoc[], envMode: EnvMode): Promise<ServiceDto[]> {
   if (services.length === 0) return [];
-  const c: SerializeContext = { live: new Map(), servers: new Map(), env: new Map() };
+  const c: SerializeContext = { live: new Map(), servers: new Map(), env: new Map(), domains: new Map() };
   const { redis } = ctx();
   try {
     const raw = await redis.mget(...services.map((s) => liveKey(s._id)));
@@ -93,6 +97,11 @@ export async function serializeServices(services: ServiceDoc[], envMode: EnvMode
   }
   const serverIds = [...new Set(services.map((s) => s.runtime?.serverId).filter((x): x is string => Boolean(x)))];
   if (serverIds.length) for (const sv of await Server.find({ _id: { $in: serverIds } }, { name: 1 }).lean<Pick<ServerDoc, '_id' | 'name'>[]>()) c.servers.set(sv._id, sv.name);
+  const http = services.filter((s) => s.port !== null).map((s) => s._id);
+  if (http.length) {
+    const rows = await CustomDomain.find({ serviceId: { $in: http }, status: 'active' }, { serviceId: 1, hostname: 1 }).sort({ createdAt: 1 }).lean<Pick<CustomDomainDoc, 'serviceId' | 'hostname'>[]>();
+    for (const d of rows) c.domains.set(d.serviceId, [...(c.domains.get(d.serviceId) ?? []), d.hostname]);
+  }
   if (envMode !== 'omit') {
     const docs = await EnvVar.find({ serviceId: { $in: services.map((s) => s._id) } }).sort({ position: 1 }).lean<EnvVarDoc[]>();
     const cipher = ctx().cipher;

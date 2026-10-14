@@ -1,5 +1,6 @@
 import { Schema } from 'mongoose';
 import {
+  CUSTOM_DOMAIN_STATUSES,
   DEPLOY_STAGES,
   DEPLOY_TRIGGERS,
   DEPLOYMENT_STATUSES,
@@ -8,6 +9,7 @@ import {
   SERVICE_STATUSES,
   SERVICE_TYPE_IDS,
   SOURCE_TYPES,
+  type CustomDomainStatus,
   type DeployStage,
   type DeployTrigger,
   type DeploymentStatus,
@@ -64,6 +66,8 @@ export interface ServiceDoc {
   nodeVersion: NodeVersion;
   startCommand: string;
   port: number | null;
+  /** Static sites: folder to publish, null = detect. Absent on documents created before static sites. */
+  publishDir?: string | null;
   autoDeploy: boolean;
   autoRestart: boolean;
   status: ServiceStatus;
@@ -127,6 +131,7 @@ const serviceSchema = new Schema(
     nodeVersion: { type: String, required: true },
     startCommand: { type: String, required: true, maxlength: 1000 },
     port: { type: Number, default: null, min: 1, max: 65535 },
+    publishDir: { type: String, default: null, maxlength: 200 },
     autoDeploy: { type: Boolean, required: true },
     autoRestart: { type: Boolean, required: true },
     status: { type: String, enum: SERVICE_STATUSES, required: true },
@@ -275,7 +280,7 @@ export interface DeploymentDoc {
     archiveSha256: string | null;
   };
   /** Build-time configuration captured when the deployment was created (rollbacks reuse it). */
-  config: { startCommand: string; nodeVersion: NodeVersion; port: number | null; settingsVersion: number };
+  config: { startCommand: string; nodeVersion: NodeVersion; port: number | null; publishDir?: string | null; settingsVersion: number };
   imageRef: string | null;
   imageDigest: string | null;
   rollbackOf: string | null;
@@ -320,6 +325,7 @@ const deploymentSchema = new Schema(
       startCommand: { type: String, required: true },
       nodeVersion: { type: String, required: true },
       port: { type: Number, default: null },
+      publishDir: { type: String, default: null },
       settingsVersion: { type: Number, required: true },
     },
     imageRef: { type: String, default: null },
@@ -472,5 +478,51 @@ const usageAlertSchema = new Schema(
 usageAlertSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0, name: 'usage_alert_ttl' });
 
 export const UsageAlertState = defineModel<UsageAlertStateDoc>('UsageAlertState', usageAlertSchema, 'usage_alert_states');
+
+// ---------------------------------------------------------------------------------------------
+// Custom domains. A hostname belongs to at most one service platform-wide (unique index); it is
+// routed only once both DNS records were seen (ownership TXT + routing CNAME/A).
+
+export interface CustomDomainDoc {
+  _id: string;
+  serviceId: string;
+  teamId: string;
+  hostname: string;
+  /** Value the user publishes in `_digitaly-verify.<hostname>` TXT to prove control of the domain. */
+  verificationToken: string;
+  status: CustomDomainStatus;
+  checks: { ownership: boolean | null; routing: boolean | null; message: string | null };
+  /** Start of the current verification window (reset when a failed domain is verified again). */
+  pendingSince: Date;
+  checkedAt: Date | null;
+  verifiedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const customDomainSchema = new Schema(
+  {
+    _id: { type: String, required: true },
+    serviceId: { type: String, required: true },
+    teamId: { type: String, required: true },
+    hostname: { type: String, required: true, maxlength: 253 },
+    verificationToken: { type: String, required: true },
+    status: { type: String, enum: CUSTOM_DOMAIN_STATUSES, required: true },
+    checks: {
+      ownership: { type: Boolean, default: null },
+      routing: { type: Boolean, default: null },
+      message: { type: String, default: null },
+    },
+    pendingSince: { type: Date, required: true },
+    checkedAt: { type: Date, default: null },
+    verifiedAt: { type: Date, default: null },
+  },
+  { ...baseOptions, timestamps: true },
+);
+customDomainSchema.index({ hostname: 1 }, { unique: true, name: 'custom_domain_hostname_unique' });
+customDomainSchema.index({ serviceId: 1, createdAt: 1 }, { name: 'custom_domain_service' });
+customDomainSchema.index({ status: 1, checkedAt: 1 }, { name: 'custom_domain_status_checked' });
+
+export const CustomDomain = defineModel<CustomDomainDoc>('CustomDomain', customDomainSchema, 'custom_domains');
 
 export type { Encrypted };

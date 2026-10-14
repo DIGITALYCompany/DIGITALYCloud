@@ -37,6 +37,7 @@ export const PREFIXES = {
   notification: 'ntf',
   ticket: 'tkt',
   upload: 'upl',
+  customDomain: 'dom',
   invoice: 'inv',
   billingOp: 'bop',
   outbox: 'obx',

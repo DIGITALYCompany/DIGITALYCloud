@@ -84,7 +84,10 @@ const logLineClass = (l: string) => (/error|failed/i.test(l) ? 'text-danger-400'
 /** Expandable deployment row with metadata and build logs. */
 export function DeploymentItem({ d, serviceName, defaultOpen = false }: { d: Deployment; serviceName?: string; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
+  const { services } = useCloud();
   const failed = d.status === 'failed';
+  // Only when an earlier version is live: a failed first deployment has nothing that keeps running.
+  const previousRuns = services.find((s) => s.id === d.serviceId)?.status === 'running';
   return (
     <div className={cn('card overflow-hidden transition', failed && open && 'border-danger-500/30')}>
       <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-4 px-5 py-4 text-left transition hover:bg-white/[0.02]" aria-expanded={open}>
@@ -126,7 +129,8 @@ export function DeploymentItem({ d, serviceName, defaultOpen = false }: { d: Dep
           </div>
           {failed && (
             <div className="mt-4 rounded-xl border border-danger-500/25 bg-danger-500/[0.07] px-4 py-3 text-sm text-danger-400">
-              {d.failureReason ?? 'This deployment failed.'} A version that was already running keeps running.
+              {d.failureReason ?? 'This deployment failed.'}
+              {previousRuns && ' The version that was already running keeps running.'}
             </div>
           )}
           <div className="mt-4 max-h-64 overflow-y-auto rounded-xl border border-white/[0.06] bg-[#05070D] p-4 font-mono text-[12px] leading-6">

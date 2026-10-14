@@ -29,6 +29,19 @@ Decisions are in [backend-decisions.md](backend-decisions.md); endpoint/screen s
 - Redis outage test: process survives, requests fail fast (≤1.5 s), readiness 503, automatic recovery.
 - Not verifiable here: `docker build`, `docker compose up`, real Docker runtime, Traefik, Stripe/Google/GitHub/Brevo/S3 live.
 
+## Static sites and custom domains (2026-10-13)
+
+- Service type `static`: built from GitHub/upload with the normal Node build (install + `build` script when present), then a
+  second image stage keeps only the publish directory (`publishDir`, or the first of dist/build/out/public/_site with an
+  index.html, else the root) and the platform's dependency-free file server (`runtime/static-server.ts`, port 8080). Clean
+  URLs, custom 404.html or SPA fallback, gzip, ranges, ETags; dotfiles and node_modules never served. Verified by building
+  images and testing over HTTP locally. Plans: Static (free), Site €1.49, Site Pro €3.99, Agency €9.99.
+- Custom domains (`modules/domains`, collection `custom_domains`, migration 0003): paid plans, HTTP services, ≤ 5 per service,
+  TXT `_digitaly-verify.<host>` + CNAME (or A to `PUBLIC_EDGE_IPS` / ALIAS for root domains). Checked by `periodic.domains`;
+  verified domains get Traefik routers with the `domains` ACME resolver. DNS checks verified against real DNS; Traefik
+  routing and certificate issuance are not verifiable here.
+- Ops: 3 more Stripe prices (`static:starter|pro|business`), the `domains` resolver in Traefik, `PUBLIC_EDGE_IPS`.
+
 ## Known placeholders to remove
 
 - None. The marketing landing preview animates illustrative numbers and is captioned as an illustration.
