@@ -12,6 +12,8 @@ import {
   isSupportedNodeVersion,
   isValidPort,
   normalizePublishDir,
+  normalizeSubdomain,
+  planAllowsCustomSubdomain,
   planAllowsAutoRestart,
   slugify,
   typeRequiresPort,
@@ -21,6 +23,7 @@ import {
   type PlanId,
   type UpdateServiceInput,
 } from '@digitalycloud/shared';
+import type { ClientSession } from 'mongoose';
 import { ctx } from '../../context';
 import { withTransaction } from '../../db/connection';
 import { BillingOperation, Deployment, EnvVar, Service, SlugReservation, SubscriptionItem, type ServiceDoc } from '../../db/models';
@@ -28,7 +31,7 @@ import { afterCursor, decodeCursor, page } from '../../http/pagination';
 import type { Tenant } from '../../http/principal';
 import { addToOutbox, dispatchNow } from '../../jobs/outbox';
 import { audit } from '../../lib/audit';
-import { AppError, badRequest, conflict, isDuplicateIn, isDuplicateKey, notFound, unavailable, validation } from '../../lib/errors';
+import { AppError, badRequest, conflict, forbidden, isDuplicateIn, isDuplicateKey, notFound, unavailable, validation } from '../../lib/errors';
 import { newId, randomString } from '../../lib/ids';
 import { hasCapacity, planResources } from '../../runtime/capacity';
 import { deploymentDto } from '../../serializers/deployment';
@@ -44,6 +47,7 @@ const CONTROL_LEASE_MS = 5 * 60_000;
 const RESERVED_SLUGS = new Set(['www', 'api', 'app', 'admin', 'status', 'mail', 'docs', 'cloud', 'dashboard', 'static', 'cdn', 'assets', 'auth', 'login', 'billing', 'support']);
 
 const nameConflict = () => conflict(MESSAGES.serviceNameTaken, 'CONFLICT', { name: MESSAGES.serviceNameTaken });
+const subdomainConflict = () => conflict(MESSAGES.subdomainTaken, 'SUBDOMAIN_TAKEN', { subdomain: MESSAGES.subdomainTaken });
 
 export async function getService(teamId: string, id: string) {
   if (typeof id !== 'string' || !/^[a-z0-9-]{1,63}$/.test(id)) throw notFound('Service');
@@ -72,6 +76,36 @@ function checkPublishDir(v: string | null | undefined) {
   const dir = normalizePublishDir(v);
   if (dir === false) throw validation(MESSAGES.publishDir, 'publishDir');
   return dir;
+}
+
+/**
+ * The new address label, `null` for the default (`{id}`), or `undefined` when nothing changes.
+ * Choosing one needs a paid plan; going back to the default is always allowed.
+ */
+async function checkSubdomain(svc: ServiceDoc, raw: string | null) {
+  if (svc.port === null) throw validation('Only services with a web address can choose one.', 'subdomain');
+  const v = normalizeSubdomain(raw);
+  if (v === false) throw validation(MESSAGES.subdomain, 'subdomain');
+  const next = v === svc._id ? null : v;
+  if (next === (svc.subdomain ?? null)) return undefined;
+  if (next === null) return null;
+  if (!planAllowsCustomSubdomain(svc.plan)) throw forbidden(MESSAGES.subdomainPlan, 'PLAN_UPGRADE_REQUIRED');
+  if (RESERVED_SLUGS.has(next)) throw validation('This address is reserved. Try another one.', 'subdomain');
+  // Fast answer for the common case; the reservation insert in the transaction decides races.
+  if (await SlugReservation.exists({ _id: next, serviceId: { $ne: svc._id } })) throw subdomainConflict();
+  return next;
+}
+
+/** Holds the new label in the slug registry (ids and labels share one namespace) and frees the old one for 30 days. */
+async function swapSubdomain(session: ClientSession, svc: ServiceDoc, next: string | null) {
+  const now = new Date();
+  if (next) {
+    // A label this service used before is still reserved for it: take it back.
+    const own = await SlugReservation.updateOne({ _id: next, serviceId: svc._id }, { $set: { state: 'active', expiresAt: null } }, { session });
+    if (own.matchedCount === 0) await SlugReservation.create([{ _id: next, serviceId: svc._id, teamId: svc.teamId, state: 'active', createdAt: now, expiresAt: null }], { session });
+  }
+  const old = svc.subdomain ?? null;
+  if (old) await SlugReservation.updateOne({ _id: old, serviceId: svc._id }, { $set: { state: 'reserved', expiresAt: new Date(now.getTime() + SLUG_RESERVATION_MS) } }, { session });
 }
 
 const STATIC_FIXED = 'Static sites are served by the platform, so they have no start command or port. Set the publish directory instead.';
@@ -314,7 +348,7 @@ export async function createService(tenant: Tenant, actor: Actor, input: CreateS
 }
 
 const LEGACY_IGNORED = ['ramLimitMb', 'storageLimitMb'] as const;
-export const SETTINGS_FIELDS = ['name', 'startCommand', 'nodeVersion', 'port', 'publishDir', 'branch', 'autoDeploy', 'autoRestart'] as const;
+export const SETTINGS_FIELDS = ['name', 'startCommand', 'nodeVersion', 'port', 'publishDir', 'subdomain', 'branch', 'autoDeploy', 'autoRestart'] as const;
 
 /** `PATCH /services/:id`: settings only. Changes apply on the next deployment. */
 export async function updateService(tenant: Tenant, actor: Actor, id: string, patch: UpdateServiceInput & Record<string, unknown>) {
@@ -368,18 +402,26 @@ export async function updateService(tenant: Tenant, actor: Actor, id: string, pa
     if (patch.autoRestart && !planAllowsAutoRestart(svc.plan)) throw validation('Automatic restart is available on paid plans.', 'autoRestart');
     set.autoRestart = patch.autoRestart;
   }
+  // The address applies right away (routing), not on the next deployment.
+  const subdomain = patch.subdomain !== undefined ? await checkSubdomain(svc, patch.subdomain) : undefined;
+  if (subdomain !== undefined) set.subdomain = subdomain;
   if (Object.keys(set).length === 0) return svc;
   try {
-    const updated = await Service.findOneAndUpdate(
-      { _id: svc._id, teamId: tenant.team._id, lifecycle: 'active' },
-      { $set: set, ...(settingsChanged ? { $inc: { settingsVersion: 1 } } : {}) },
-    ).lean<ServiceDoc>();
-    if (!updated) throw notFound('Service');
+    const updated = await withTransaction(async (session) => {
+      if (subdomain !== undefined) await swapSubdomain(session, svc, subdomain);
+      return Service.findOneAndUpdate(
+        { _id: svc._id, teamId: tenant.team._id, lifecycle: 'active', ...(subdomain !== undefined ? { subdomain: svc.subdomain ?? null } : {}) },
+        { $set: set, ...(settingsChanged ? { $inc: { settingsVersion: 1 } } : {}) },
+        { session },
+      ).lean<ServiceDoc>();
+    });
+    if (!updated) throw subdomain !== undefined ? conflict('The address was changed at the same time. Reload and try again.') : notFound('Service');
     await audit({ action: 'service.settings_updated', actorUserId: actor.userId, actorApiKeyId: actor.apiKeyId, teamId: tenant.team._id, targetType: 'service', targetId: svc._id, meta: { fields: Object.keys(set) } });
     await publishService(svc._id);
     return updated;
   } catch (e) {
     if (isDuplicateKey(e, 'service_team_name_unique')) throw nameConflict();
+    if (isDuplicateIn(e, 'slug_reservations', '_id_')) throw subdomainConflict();
     throw e;
   }
 }
@@ -409,7 +451,7 @@ export async function deleteService(tenant: Tenant, actor: Actor, id: string) {
       { $set: { activeOperation: { id: newId('deployment'), kind: 'delete', generation: svc.opGeneration, startedAt: now, leaseUntil: new Date(now.getTime() + 24 * 3600_000) } } },
       { session },
     );
-    await SlugReservation.updateOne({ _id: id }, { $set: { state: 'reserved', expiresAt: new Date(now.getTime() + SLUG_RESERVATION_MS) } }, { session });
+    await SlugReservation.updateMany({ _id: { $in: [id, ...(svc.subdomain ? [svc.subdomain] : [])] }, serviceId: id }, { $set: { state: 'reserved', expiresAt: new Date(now.getTime() + SLUG_RESERVATION_MS) } }, { session });
     await Deployment.updateMany(
       { serviceId: id, status: 'building' },
       { $set: { status: 'failed', stage: null, finishedAt: now, failureCode: 'SERVICE_DELETED', failureReason: 'The service was deleted.' } },

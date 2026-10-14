@@ -1,4 +1,4 @@
-import { getRegion, planAllowsCustomDomains, planLimits, regionLabel, type EnvVarDto, type ServiceDto } from '@digitalycloud/shared';
+import { getRegion, planAllowsCustomDomains, planAllowsCustomSubdomain, planLimits, regionLabel, type EnvVarDto, type ServiceDto } from '@digitalycloud/shared';
 import { ctx } from '../context';
 import { CustomDomain, EnvVar, Server, type CustomDomainDoc, type EnvVarDoc, type ServerDoc, type ServiceDoc } from '../db/models';
 import { envAad, envDto, redactAll } from '../modules/services/env.service';
@@ -18,10 +18,13 @@ const LIVE_STALE_MS = 60_000;
 
 export const liveKey = (serviceId: string) => `${ctx().config.REDIS_PREFIX}:svc:${serviceId}:live`;
 
-export function serviceUrl(id: string, port: number | null) {
-  if (port === null) return null;
+/** The label a service is reached at: its chosen subdomain while the plan includes it, else its id. */
+export const publicLabel = (s: Pick<ServiceDoc, '_id' | 'plan' | 'subdomain'>) => (s.subdomain && planAllowsCustomSubdomain(s.plan) ? s.subdomain : s._id);
+
+export function serviceUrl(s: Pick<ServiceDoc, '_id' | 'plan' | 'subdomain' | 'port'>) {
+  if (s.port === null) return null;
   const { PUBLIC_RUNTIME_SCHEME: scheme, PUBLIC_RUNTIME_DOMAIN: domain, PUBLIC_RUNTIME_PORT: p } = ctx().config;
-  return `${scheme}://${id}.${domain}${p ? `:${p}` : ''}`;
+  return `${scheme}://${publicLabel(s)}.${domain}${p ? `:${p}` : ''}`;
 }
 
 export type EnvMode = 'plain' | 'redacted' | 'omit';
@@ -61,7 +64,8 @@ export function serializeService(s: ServiceDoc, c: SerializeContext, envMode: En
     startCommand: s.startCommand,
     port: s.port,
     publishDir: s.type === 'static' ? (s.publishDir ?? null) : null,
-    url: serviceUrl(s._id, s.port),
+    subdomain: s.port !== null ? (s.subdomain ?? null) : null,
+    url: serviceUrl(s),
     // Domains of a service moved to the free plan stay saved but receive no traffic.
     domains: planAllowsCustomDomains(s.plan) ? (c.domains.get(s._id) ?? []) : [],
     plan: s.plan,

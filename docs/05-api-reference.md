@@ -418,6 +418,7 @@ The backend's plan and region tables. **The backend validates against these**, a
   "startCommand": "node index.js",
   "port": null,
   "publishDir": null,
+  "subdomain": null,
   "url": null,
   "domains": [],
   "plan": "starter",
@@ -498,7 +499,7 @@ Side effects: generates the slug `id` (`slugify(name)`, plus `-xxxx` on collisio
 
 **Replaces** `api.services.update(id, patch)` for **settings only**.
 
-Allowed fields (anything else → `400`): `name`, `startCommand`, `nodeVersion`, `port`, `publishDir` (static sites only; static sites reject `startCommand`/`port`), `branch` (GitHub only), `autoDeploy` (GitHub only), `autoRestart` (paid plans only).
+Allowed fields (anything else → `400`): `name`, `startCommand`, `nodeVersion`, `port`, `publishDir` (static sites only; static sites reject `startCommand`/`port`), `subdomain` (services with a web address; choosing one needs a paid plan → `403 PLAN_UPGRADE_REQUIRED`; 3–40 of `a-z 0-9 -`; taken → `409 SUBDOMAIN_TAKEN`; empty/`null` resets to the id; applies immediately, the id address keeps working; the old label stays reserved 30 days), `branch` (GitHub only), `autoDeploy` (GitHub only), `autoRestart` (paid plans only).
 
 ```json
 { "name": "SyncBot", "startCommand": "node index.js", "nodeVersion": "22 LTS", "port": null, "branch": "main" }
@@ -561,7 +562,7 @@ Values are encrypted at rest. A restart is **not** automatic (the UI says "Resta
 ```json
 { "id": "dom_k2…", "serviceId": "portfolio", "hostname": "www.example.com", "status": "pending", "apex": false,
   "records": [
-    { "purpose": "routing", "type": "CNAME", "name": "www.example.com", "value": "portfolio.digitaly.app", "ok": false },
+    { "purpose": "routing", "type": "CNAME", "name": "www.example.com", "value": "portfolio.digitalycloud.com", "ok": false },
     { "purpose": "ownership", "type": "TXT", "name": "_digitaly-verify.www.example.com", "value": "dgc-verify=…", "ok": true } ],
   "message": "www.example.com doesn’t point anywhere yet. Add the CNAME record.", "createdAt": 1791201600000, "verifiedAt": null, "checkedAt": 1791201605000 }
 ```

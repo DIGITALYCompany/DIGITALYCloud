@@ -73,7 +73,7 @@ Groups marked *all or none* must be filled completely or left empty (a partial g
 | `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | – (*all or none*) | Plus `S3_ENDPOINT`, `S3_REGION` (`eu-west-3`), `S3_FORCE_PATH_STYLE` (`false`; `true` for MinIO). |
 | `UPLOAD_MAX_MB`, `UPLOAD_MAX_LARGE_MB`, `UPLOAD_MAX_EXPANDED_MB`, `UPLOAD_MAX_FILES`, `UPLOAD_TMP_DIR` | 100, 500, 2048, 50000, OS temp | Archive limits. |
 | `RUNTIME_DRIVER` | `disabled` | `docker` to run workloads on registered hosts. |
-| `PUBLIC_RUNTIME_DOMAIN`, `PUBLIC_RUNTIME_SCHEME`, `PUBLIC_RUNTIME_PORT` | `digitaly.app`, `https`, – | Public service URLs `{id}.{domain}`. |
+| `PUBLIC_RUNTIME_DOMAIN`, `PUBLIC_RUNTIME_SCHEME`, `PUBLIC_RUNTIME_PORT` | `digitalycloud.com`, `https`, – | Public service URLs `{id}.{domain}`. |
 | `PUBLIC_EDGE_IPS` | – | Public IPs of the Traefik edge, comma-separated: shown as `A` records for root custom domains (`example.com`) and accepted by the DNS check. Without it, root domains are told to use ALIAS/ANAME. |
 | `REGISTRY_URL`, `REGISTRY_USERNAME`, `REGISTRY_PASSWORD` | – | Image registry for multi-host setups. |
 | `RUNTIME_NODE_IMAGES` | `node:24-alpine`, `node:22-alpine` | JSON map of Node majors to (digest-pinned) base images. |
@@ -114,7 +114,7 @@ log redaction of a secret env value), an uploaded archive and a public Docker im
 
 ## 4. Routing, DNS and TLS
 
-- DNS: `cloud.digitaly.fr` → frontend, `api.cloud.digitaly.fr` → API load balancer, `*.digitaly.app` (the
+- DNS: `cloud.digitaly.fr` → frontend, `api.cloud.digitaly.fr` → API load balancer, `*.digitalycloud.com` (the
   `PUBLIC_RUNTIME_DOMAIN`) → Traefik.
 - Traefik static configuration (sketch):
 
@@ -140,10 +140,10 @@ log redaction of a secret env value), an uploaded archive and a public Docker im
         tlsChallenge: {}
   ```
 
-  The feed's routers reference the `wildcard` resolver with `main: digitaly.app, sans: ['*.digitaly.app']`. Routes appear only
+  The feed's routers reference the `wildcard` resolver with `main: digitalycloud.com, sans: ['*.digitalycloud.com']`. Routes appear only
   after a candidate container passes its health check and switch atomically on deploys (old version drained for
   `ROUTE_DRAIN_SECONDS`).
-- Custom domains: verified hostnames (TXT `_digitaly-verify.<host>` + CNAME to `{id}.digitaly.app`, or A records to
+- Custom domains: verified hostnames (TXT `_digitaly-verify.<host>` + CNAME to `{id}.digitalycloud.com`, or A records to
   `PUBLIC_EDGE_IPS` for root domains) get a router with the `domains` resolver above (TLS-ALPN on :443, so port 443 must be
   reachable from the internet). Only paid services are routed. Run `npm run db:migrate` once to create `custom_domains`.
 

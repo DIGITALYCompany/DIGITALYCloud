@@ -17,7 +17,7 @@ Users sign up, create a **service** in a 5-step wizard, and it deploys. From the
 | ----------------- | ------------------------------------------------------------- |
 | Production site   | `https://cloud.digitaly.fr` (`NEXT_PUBLIC_SITE_URL`)          |
 | Public API (docs) | `https://api.cloud.digitaly.fr/v1` (see `data/docs/platform.tsx`) |
-| Service URLs      | `https://{serviceId}.digitaly.app` (only services with a port) |
+| Service URLs      | `https://{serviceId}.digitalycloud.com` (only services with a port) |
 | Currency          | EUR, VAT included, billed monthly, prorated                   |
 | Support email     | `support@digitaly.fr`                                         |
 | Repository        | `github.com/DIGITALYCompany/DIGITALYCloud`                    |

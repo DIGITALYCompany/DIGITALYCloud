@@ -83,6 +83,7 @@ const schemas: Record<string, Schema> = {
       startCommand: str(),
       port: nullable(int({ minimum: 1, maximum: 65535 })),
       publishDir: nullable(str({ description: 'Static sites: published folder; null detects dist, build, out, public, _site or the root.' })),
+      subdomain: nullable(str({ description: 'Chosen address label on the platform domain (paid plans); `url` uses the id while the plan does not include it.' })),
       url: nullable(str({ format: 'uri' })),
       domains: { ...arr(str()), description: 'Verified custom domains receiving traffic (paid plans).' },
       plan: enumOf(PLAN_LEVELS),
@@ -95,7 +96,7 @@ const schemas: Record<string, Schema> = {
       operation: nullable(obj({ kind: enumOf(['deploy', 'start', 'stop', 'restart', 'apply_limits', 'delete']), startedAt: ms })),
       env: { ...arr(ref('EnvVar')), description: 'Session requests only; never sent to API keys or over SSE.' },
     },
-    ['id', 'name', 'type', 'status', 'cpu', 'ramMb', 'ramLimitMb', 'storageMb', 'storageLimitMb', 'metricsAt', 'startedAt', 'createdAt', 'lastDeployAt', 'region', 'regionId', 'server', 'runtime', 'nodeVersion', 'startCommand', 'port', 'publishDir', 'url', 'domains', 'plan', 'source', 'repo', 'branch', 'autoDeploy', 'autoRestart', 'pendingChanges', 'operation']
+    ['id', 'name', 'type', 'status', 'cpu', 'ramMb', 'ramLimitMb', 'storageMb', 'storageLimitMb', 'metricsAt', 'startedAt', 'createdAt', 'lastDeployAt', 'region', 'regionId', 'server', 'runtime', 'nodeVersion', 'startCommand', 'port', 'publishDir', 'subdomain', 'url', 'domains', 'plan', 'source', 'repo', 'branch', 'autoDeploy', 'autoRestart', 'pendingChanges', 'operation']
   ),
   CreateServiceInput: obj(
     {
@@ -117,7 +118,7 @@ const schemas: Record<string, Schema> = {
     },
     ['name', 'type', 'source', 'plan', 'regionId']
   ),
-  UpdateServiceInput: obj({ name: str(), startCommand: str(), nodeVersion: str(), port: nullable(int()), publishDir: nullable(str()), branch: str(), autoDeploy: bool, autoRestart: bool }, []),
+  UpdateServiceInput: obj({ name: str(), startCommand: str(), nodeVersion: str(), port: nullable(int()), publishDir: nullable(str()), subdomain: nullable(str({ description: 'Paid plans; empty or null resets to the id. Applies immediately.' })), branch: str(), autoDeploy: bool, autoRestart: bool }, []),
   DnsRecord: obj({ purpose: enumOf(['ownership', 'routing']), type: enumOf(['TXT', 'CNAME', 'A', 'ALIAS']), name: str(), value: str(), ok: nullable(bool) }),
   CustomDomain: obj({
     id: str(),
