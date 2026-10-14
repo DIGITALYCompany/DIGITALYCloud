@@ -3,7 +3,7 @@
   "info": {
     "title": "DIGITALYCloud API",
     "version": "1.0.0",
-    "description": "Hosting for Discord bots, Node.js apps, APIs and workers. All paths are relative to `/v1`. Timestamps are epoch milliseconds, dates `YYYY-MM-DD`, money in euros (integer cents internally). Errors: `{ \"error\": { \"code\", \"message\", \"fields?\" } }`. Session principals pick the team with `X-Team-Id` (or `?team=` on GET/EventSource); API keys are bound to one team. `x-permission` lists the team roles and the minimum API-key scope for each operation (null: API keys not accepted)."
+    "description": "Hosting for Discord bots, Node.js apps, APIs, workers and static sites. All paths are relative to `/v1`. Timestamps are epoch milliseconds, dates `YYYY-MM-DD`, money in euros (integer cents internally). Errors: `{ \"error\": { \"code\", \"message\", \"fields?\" } }`. Session principals pick the team with `X-Team-Id` (or `?team=` on GET/EventSource); API keys are bound to one team. `x-permission` lists the team roles and the minimum API-key scope for each operation (null: API keys not accepted)."
   },
   "servers": [
     {
@@ -502,7 +502,8 @@
               "discord",
               "node",
               "api",
-              "worker"
+              "worker",
+              "static"
             ]
           },
           "status": {
@@ -576,7 +577,8 @@
             "type": "string",
             "enum": [
               "Docker",
-              "Node.js"
+              "Node.js",
+              "Static"
             ]
           },
           "nodeVersion": {
@@ -600,6 +602,17 @@
               }
             ]
           },
+          "publishDir": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "Static sites: published folder; null detects dist, build, out, public, _site or the root."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "url": {
             "anyOf": [
               {
@@ -610,6 +623,13 @@
                 "type": "null"
               }
             ]
+          },
+          "domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Verified custom domains receiving traffic (paid plans)."
           },
           "plan": {
             "type": "string",
@@ -711,7 +731,9 @@
           "nodeVersion",
           "startCommand",
           "port",
+          "publishDir",
           "url",
+          "domains",
           "plan",
           "source",
           "repo",
@@ -736,7 +758,8 @@
               "discord",
               "node",
               "api",
-              "worker"
+              "worker",
+              "static"
             ]
           },
           "source": {
@@ -780,7 +803,8 @@
           },
           "startCommand": {
             "type": "string",
-            "maxLength": 1000
+            "maxLength": 1000,
+            "description": "Ignored for static sites."
           },
           "port": {
             "anyOf": [
@@ -788,6 +812,18 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 65535
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "publishDir": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Static sites only."
               },
               {
                 "type": "null"
@@ -823,8 +859,6 @@
           "name",
           "type",
           "source",
-          "startCommand",
-          "port",
           "plan",
           "regionId"
         ],
@@ -852,6 +886,16 @@
               }
             ]
           },
+          "publishDir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "branch": {
             "type": "string"
           },
@@ -863,6 +907,134 @@
           }
         },
         "required": [],
+        "additionalProperties": false
+      },
+      "DnsRecord": {
+        "type": "object",
+        "properties": {
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "ownership",
+              "routing"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "TXT",
+              "CNAME",
+              "A",
+              "ALIAS"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          },
+          "ok": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "purpose",
+          "type",
+          "name",
+          "value",
+          "ok"
+        ],
+        "additionalProperties": false
+      },
+      "CustomDomain": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "serviceId": {
+            "type": "string"
+          },
+          "hostname": {
+            "type": "string",
+            "examples": [
+              "www.example.com"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "active",
+              "failed"
+            ]
+          },
+          "apex": {
+            "type": "boolean"
+          },
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DnsRecord"
+            }
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "integer",
+            "description": "Epoch milliseconds"
+          },
+          "verifiedAt": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "description": "Epoch milliseconds"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "description": "Epoch milliseconds"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "serviceId",
+          "hostname",
+          "status",
+          "apex",
+          "records",
+          "message",
+          "createdAt",
+          "verifiedAt",
+          "checkedAt"
+        ],
         "additionalProperties": false
       },
       "Deployment": {
@@ -1929,13 +2101,20 @@
                 "items": {
                   "$ref": "#/components/schemas/Plan"
                 }
+              },
+              "static": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Plan"
+                }
               }
             },
             "required": [
               "discord",
               "node",
               "api",
-              "worker"
+              "worker",
+              "static"
             ]
           },
           "regions": {
@@ -2536,7 +2715,8 @@
               "discord",
               "node",
               "api",
-              "worker"
+              "worker",
+              "static"
             ]
           },
           "server": {
@@ -6068,6 +6248,450 @@
           },
           "503": {
             "description": "Unavailable / not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/services/{id}/domains": {
+      "get": {
+        "summary": "List custom domains",
+        "tags": [
+          "Services"
+        ],
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "x-permission": {
+          "action": "services.read",
+          "roles": [
+            "owner",
+            "admin",
+            "developer",
+            "viewer"
+          ],
+          "apiKeyScope": "read"
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Team-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Team for this request (session principals). Defaults to the session’s active team."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CustomDomain"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in / invalid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (role, scope, CSRF, team)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (Retry-After)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add a custom domain (paid plans, HTTP services)",
+        "tags": [
+          "Services"
+        ],
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "x-permission": {
+          "action": "services.update",
+          "roles": [
+            "owner",
+            "admin"
+          ],
+          "apiKeyScope": "full"
+        },
+        "x-csrf": "Cookie-authenticated calls need Origin + X-CSRF-Token; bearer keys are exempt.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Team-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Team for this request (session principals). Defaults to the session’s active team."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "hostname": {
+                    "type": "string",
+                    "maxLength": 300
+                  }
+                },
+                "required": [
+                  "hostname"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Create the returned DNS records; the domain goes live once both are found (checked in the background).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomDomain"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in / invalid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (role, scope, CSRF, team)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (Retry-After)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/services/{id}/domains/{domainId}/verify": {
+      "post": {
+        "summary": "Check the DNS records now",
+        "tags": [
+          "Services"
+        ],
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "x-permission": {
+          "action": "services.update",
+          "roles": [
+            "owner",
+            "admin"
+          ],
+          "apiKeyScope": "full"
+        },
+        "x-csrf": "Cookie-authenticated calls need Origin + X-CSRF-Token; bearer keys are exempt.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "domainId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Team-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Team for this request (session principals). Defaults to the session’s active team."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomDomain"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in / invalid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (role, scope, CSRF, team)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (Retry-After)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/services/{id}/domains/{domainId}": {
+      "delete": {
+        "summary": "Remove a custom domain",
+        "tags": [
+          "Services"
+        ],
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "x-permission": {
+          "action": "services.update",
+          "roles": [
+            "owner",
+            "admin"
+          ],
+          "apiKeyScope": "full"
+        },
+        "x-csrf": "Cookie-authenticated calls need Origin + X-CSRF-Token; bearer keys are exempt.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "domainId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Team-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Team for this request (session principals). Defaults to the session’s active team."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Not signed in / invalid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (role, scope, CSRF, team)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (Retry-After)",
             "content": {
               "application/json": {
                 "schema": {

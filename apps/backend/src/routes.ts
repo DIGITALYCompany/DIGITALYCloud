@@ -5,6 +5,7 @@ import { catalogRouter } from './modules/catalog/catalog.routes';
 import { healthRouter } from './modules/health/health.routes';
 import { teamsRouter } from './modules/teams/teams.routes';
 import { servicesRouter } from './modules/services/services.routes';
+import { domainsRouter } from './modules/domains/domains.routes';
 import { deploymentsRouter } from './modules/deployments/deployments.routes';
 import { notificationsRouter } from './modules/notifications/notifications.routes';
 import { eventsRouter } from './modules/events/events.routes';
@@ -26,6 +27,7 @@ export function v1Routes(v1: Router) {
   v1.use(accountRouter());
   v1.use(teamsRouter());
   v1.use(servicesRouter());
+  v1.use(domainsRouter());
   v1.use(deploymentsRouter());
   v1.use(notificationsRouter());
   v1.use(eventsRouter());

@@ -16,12 +16,13 @@ import { publishService } from '../modules/services/publish';
 import { installationFor } from '../modules/services/sources';
 import { uploadLimits } from '../modules/uploads/uploads.service';
 import { ArchiveError, buildContext } from './archive';
-import { DOCKERFILE, dockerfileFor } from './build-plan';
+import { DOCKERFILE, STATIC_SERVER_FILE, dockerfileFor } from './build-plan';
 import { planResources, promote, release, reserve } from './capacity';
 import { DeployLog } from './deploy-log';
 import { driverFor, type ContainerSpec, type RuntimeDriver } from './driver';
 import { assertPublicRegistry } from './network-policy';
 import { LineSplitter } from './redact';
+import { STATIC_SERVER_SCRIPT } from './static-server';
 
 /** A deployment failure with a reason the user can act on (shown in the UI and notification). */
 export class DeployError extends Error {
@@ -277,14 +278,17 @@ export async function runDeployment(deploymentId: string, generation: number, at
       await setStage(dep, 'installing', source.meta);
       log.step('Installing dependencies and building the image');
       let pm = 'npm';
+      const staticSite = svc.type === 'static' ? { publishDir: dep.config.publishDir ?? null } : undefined;
       const context = buildContext(source.src, uploadLimits().archive, {
         stripPrefix: source.strip,
         extras: (rootFiles, read) => {
-          const df = dockerfileFor({ nodeVersion: dep.config.nodeVersion as never, baseImages: ctx().config.nodeImages, rootFiles, packageJson: read('package.json') });
+          const df = dockerfileFor({ nodeVersion: dep.config.nodeVersion as never, baseImages: ctx().config.nodeImages, rootFiles, packageJson: read('package.json'), staticSite });
           pm = df.packageManager;
-          return [{ path: DOCKERFILE, content: df.content }];
+          return [{ path: DOCKERFILE, content: df.content }, ...(staticSite ? [{ path: STATIC_SERVER_FILE, content: STATIC_SERVER_SCRIPT }] : [])];
         },
       });
+      // The last `Error: …` line of the build (ours or the tooling's) explains a failed build.
+      let buildError: string | null = null;
       try {
         await Promise.all([
           state.driver.buildImage(context.stream, tag, {
@@ -292,7 +296,13 @@ export async function runDeployment(deploymentId: string, generation: number, at
             labels: { 'dgc.managed': 'true', 'dgc.service': svc._id, 'dgc.deployment': dep._id },
             memoryMb: BUILD_MEMORY_MB,
             timeoutMs: ctx().config.BUILD_TIMEOUT_SECONDS * 1000,
-            onLog: (l) => log.line(l),
+            onLog: (raw) => {
+              // The builder colours RUN stderr (`ESC[91m…ESC[0m`); the dashboard shows plain text.
+              // eslint-disable-next-line no-control-regex -- stripping ANSI escapes is the point
+              const l = raw.replace(/\u001b\[[0-9;]*m/g, '');
+              if (/^\s*Error: /.test(l)) buildError = l.trim().slice(7, 307);
+              if (l.trim()) log.line(l);
+            },
           }),
           context.done,
         ]);
@@ -302,7 +312,7 @@ export async function runDeployment(deploymentId: string, generation: number, at
         if (err instanceof ArchiveError) throw new DeployError('SOURCE_INVALID', err.message);
         if (/took too long/.test((e as Error).message)) throw new DeployError('BUILD_TIMEOUT', (e as Error).message);
         if (isInfraError(e)) throw e;
-        throw new DeployError('BUILD_FAILED', 'The build failed. Check the build logs above.');
+        throw new DeployError('BUILD_FAILED', buildError ? `The build failed: ${log.redact(buildError)}` : 'The build failed. Check the build logs above.');
       } finally {
         await source.cleanup();
       }

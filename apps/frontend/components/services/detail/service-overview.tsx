@@ -137,8 +137,14 @@ export function ServiceOverview() {
               </span>
             }
           />
-          <MetricRow label="Start command" value={service.startCommand} />
-          <MetricRow label="Port" value={service.port ?? '—'} />
+          {service.type === 'static' ? (
+            <MetricRow label="Publish directory" value={service.publishDir ?? 'Detected automatically'} />
+          ) : (
+            <>
+              <MetricRow label="Start command" value={service.startCommand} />
+              <MetricRow label="Port" value={service.port ?? '—'} />
+            </>
+          )}
           <MetricRow
             label="Domain"
             value={
@@ -152,6 +158,18 @@ export function ServiceOverview() {
               )
             }
           />
+          {service.domains.map((d) => (
+            <MetricRow
+              key={d}
+              label="Custom domain"
+              value={
+                <a href={`https://${d}`} target="_blank" rel="noopener noreferrer" title={d} className="flex items-center gap-1 hover:text-brand-200">
+                  <Globe2 className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{d}</span>
+                </a>
+              }
+            />
+          ))}
           <MetricRow
             label="Created"
             value={

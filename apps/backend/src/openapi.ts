@@ -78,11 +78,13 @@ const schemas: Record<string, Schema> = {
       region: str({ examples: ['France — Lyon'] }),
       regionId: str(),
       server: str(),
-      runtime: enumOf(['Docker', 'Node.js']),
+      runtime: enumOf(['Docker', 'Node.js', 'Static']),
       nodeVersion: str({ examples: ['24 LTS'] }),
       startCommand: str(),
       port: nullable(int({ minimum: 1, maximum: 65535 })),
+      publishDir: nullable(str({ description: 'Static sites: published folder; null detects dist, build, out, public, _site or the root.' })),
       url: nullable(str({ format: 'uri' })),
+      domains: { ...arr(str()), description: 'Verified custom domains receiving traffic (paid plans).' },
       plan: enumOf(PLAN_LEVELS),
       source: enumOf(SOURCE_TYPES),
       repo: str(),
@@ -93,7 +95,7 @@ const schemas: Record<string, Schema> = {
       operation: nullable(obj({ kind: enumOf(['deploy', 'start', 'stop', 'restart', 'apply_limits', 'delete']), startedAt: ms })),
       env: { ...arr(ref('EnvVar')), description: 'Session requests only; never sent to API keys or over SSE.' },
     },
-    ['id', 'name', 'type', 'status', 'cpu', 'ramMb', 'ramLimitMb', 'storageMb', 'storageLimitMb', 'metricsAt', 'startedAt', 'createdAt', 'lastDeployAt', 'region', 'regionId', 'server', 'runtime', 'nodeVersion', 'startCommand', 'port', 'url', 'plan', 'source', 'repo', 'branch', 'autoDeploy', 'autoRestart', 'pendingChanges', 'operation']
+    ['id', 'name', 'type', 'status', 'cpu', 'ramMb', 'ramLimitMb', 'storageMb', 'storageLimitMb', 'metricsAt', 'startedAt', 'createdAt', 'lastDeployAt', 'region', 'regionId', 'server', 'runtime', 'nodeVersion', 'startCommand', 'port', 'publishDir', 'url', 'domains', 'plan', 'source', 'repo', 'branch', 'autoDeploy', 'autoRestart', 'pendingChanges', 'operation']
   ),
   CreateServiceInput: obj(
     {
@@ -104,17 +106,31 @@ const schemas: Record<string, Schema> = {
       branch: nullable(str()),
       uploadId: nullable(str()),
       nodeVersion: enumOf(['24 LTS', '22 LTS']),
-      startCommand: str({ maxLength: 1000 }),
+      startCommand: str({ maxLength: 1000, description: 'Ignored for static sites.' }),
       port: nullable(int({ minimum: 1, maximum: 65535 })),
+      publishDir: nullable(str({ maxLength: 200, description: 'Static sites only.' })),
       plan: enumOf(PLAN_LEVELS),
       regionId: str(),
       env: arr(ref('EnvVarInput')),
       autoDeploy: bool,
       autoRestart: bool,
     },
-    ['name', 'type', 'source', 'startCommand', 'port', 'plan', 'regionId']
+    ['name', 'type', 'source', 'plan', 'regionId']
   ),
-  UpdateServiceInput: obj({ name: str(), startCommand: str(), nodeVersion: str(), port: nullable(int()), branch: str(), autoDeploy: bool, autoRestart: bool }, []),
+  UpdateServiceInput: obj({ name: str(), startCommand: str(), nodeVersion: str(), port: nullable(int()), publishDir: nullable(str()), branch: str(), autoDeploy: bool, autoRestart: bool }, []),
+  DnsRecord: obj({ purpose: enumOf(['ownership', 'routing']), type: enumOf(['TXT', 'CNAME', 'A', 'ALIAS']), name: str(), value: str(), ok: nullable(bool) }),
+  CustomDomain: obj({
+    id: str(),
+    serviceId: str(),
+    hostname: str({ examples: ['www.example.com'] }),
+    status: enumOf(['pending', 'active', 'failed']),
+    apex: bool,
+    records: arr(ref('DnsRecord')),
+    message: nullable(str()),
+    createdAt: ms,
+    verifiedAt: nullable(ms),
+    checkedAt: nullable(ms),
+  }),
   Deployment: obj(
     {
       id: str(),
@@ -333,6 +349,12 @@ const ops: Record<string, Record<string, Op>> = {
   '/services/{id}/stop': { post: { summary: 'Stop', tag: 'Services', auth: 'any', action: 'services.control', params: [P.id, P.team], ok: { status: 200, schema: ref('Service') }, errors: [403, 404, 409] } },
   '/services/{id}/restart': { post: { summary: 'Restart (recreates the container so env changes apply)', tag: 'Services', auth: 'any', action: 'services.control', params: [P.id, P.team], ok: { status: 200, schema: ref('Service') }, errors: [403, 404, 409] } },
   '/services/{id}/plan': { post: { summary: 'Change the plan (billed)', tag: 'Services', auth: 'session', action: 'services.plan', params: [P.id, P.team], body: obj({ plan: enumOf(PLAN_LEVELS) }), ok: { status: 200, schema: ref('Service') }, errors: [400, 402, 403, 404, 409, 503] } },
+  '/services/{id}/domains': {
+    get: { summary: 'List custom domains', tag: 'Services', auth: 'any', action: 'services.read', params: [P.id, P.team], ok: { status: 200, schema: obj({ data: arr(ref('CustomDomain')) }) }, errors: [404] },
+    post: { summary: 'Add a custom domain (paid plans, HTTP services)', tag: 'Services', auth: 'any', action: 'services.update', params: [P.id, P.team], body: obj({ hostname: str({ maxLength: 300 }) }), ok: { status: 201, schema: ref('CustomDomain'), description: 'Create the returned DNS records; the domain goes live once both are found (checked in the background).' }, errors: [400, 403, 404, 409] },
+  },
+  '/services/{id}/domains/{domainId}/verify': { post: { summary: 'Check the DNS records now', tag: 'Services', auth: 'any', action: 'services.update', params: [P.id, { name: 'domainId', in: 'path', required: true, schema: str() }, P.team], ok: { status: 200, schema: ref('CustomDomain') }, errors: [403, 404] } },
+  '/services/{id}/domains/{domainId}': { delete: { summary: 'Remove a custom domain', tag: 'Services', auth: 'any', action: 'services.update', params: [P.id, { name: 'domainId', in: 'path', required: true, schema: str() }, P.team], ok: { status: 204 }, errors: [403, 404] } },
   '/services/{id}/env': { put: { summary: 'Replace environment variables', tag: 'Services', auth: 'any', action: 'services.env.write', params: [P.id, P.team], body: obj({ env: arr(ref('EnvVarInput')) }), ok: { status: 200, schema: obj({ data: arr(ref('EnvVar')) }), description: 'API keys get keys only (values blank).' }, errors: [400, 403, 404] } },
   '/services/{id}/deploy': {
     post: {
@@ -464,7 +486,7 @@ export function buildOpenApi() {
       title: 'DIGITALYCloud API',
       version: VERSION,
       description:
-        'Hosting for Discord bots, Node.js apps, APIs and workers. All paths are relative to `/v1`. Timestamps are epoch milliseconds, dates `YYYY-MM-DD`, money in euros (integer cents internally). Errors: `{ "error": { "code", "message", "fields?" } }`. Session principals pick the team with `X-Team-Id` (or `?team=` on GET/EventSource); API keys are bound to one team. `x-permission` lists the team roles and the minimum API-key scope for each operation (null: API keys not accepted).',
+        'Hosting for Discord bots, Node.js apps, APIs, workers and static sites. All paths are relative to `/v1`. Timestamps are epoch milliseconds, dates `YYYY-MM-DD`, money in euros (integer cents internally). Errors: `{ "error": { "code", "message", "fields?" } }`. Session principals pick the team with `X-Team-Id` (or `?team=` on GET/EventSource); API keys are bound to one team. `x-permission` lists the team roles and the minimum API-key scope for each operation (null: API keys not accepted).',
     },
     servers: [{ url: 'https://api.cloud.digitaly.fr/v1' }, { url: 'http://localhost:4000/v1' }],
     tags: ['Platform', 'Auth', 'Account', 'Teams', 'Services', 'Deployments', 'Observability', 'API keys', 'Billing', 'Sources', 'Support', 'Staff', 'Webhooks'].map((name) => ({ name })),

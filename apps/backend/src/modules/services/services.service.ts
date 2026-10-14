@@ -3,12 +3,15 @@ import {
   GIT_BRANCH_RE,
   MESSAGES,
   SERVICE_NAME_RE,
+  STATIC_PORT,
+  STATIC_START_COMMAND,
   getRegion,
   getServicePlan,
   isPaidPlan,
   isRegionAllowed,
   isSupportedNodeVersion,
   isValidPort,
+  normalizePublishDir,
   planAllowsAutoRestart,
   slugify,
   typeRequiresPort,
@@ -65,6 +68,14 @@ function checkStartCommand(cmd: string) {
   return c;
 }
 
+function checkPublishDir(v: string | null | undefined) {
+  const dir = normalizePublishDir(v);
+  if (dir === false) throw validation(MESSAGES.publishDir, 'publishDir');
+  return dir;
+}
+
+const STATIC_FIXED = 'Static sites are served by the platform, so they have no start command or port. Set the publish directory instead.';
+
 function checkNodeVersion(v: string, source: string): NodeVersion {
   if (source === 'docker') return isSupportedNodeVersion(v) ? v : DEFAULT_NODE_VERSION;
   if (!isSupportedNodeVersion(v)) {
@@ -120,6 +131,7 @@ export interface PreparedService {
   nodeVersion: NodeVersion;
   startCommand: string;
   port: number | null;
+  publishDir: string | null;
   repo: string;
   branch: string | null;
   repoNormalized: string | null;
@@ -141,8 +153,12 @@ export async function prepareService(teamId: string, input: CreateServiceInput):
   if (!SERVICE_NAME_RE.test(name)) throw validation(MESSAGES.serviceName, 'name');
   regionCheck(input.regionId, input.plan, input.type);
   const nodeVersion = checkNodeVersion(input.nodeVersion, input.source);
-  const startCommand = checkStartCommand(input.startCommand);
-  const port = checkPort(input.type, input.port);
+  const isStatic = input.type === 'static';
+  if (isStatic && input.source === 'docker') throw validation('Static sites are built from GitHub or an uploaded archive.', 'source');
+  // Static sites run the platform's file server: their start command and port are fixed.
+  const startCommand = isStatic ? STATIC_START_COMMAND : checkStartCommand(input.startCommand);
+  const port = isStatic ? STATIC_PORT : checkPort(input.type, input.port);
+  const publishDir = isStatic ? checkPublishDir(input.publishDir) : null;
   validateEnvList(input.env, new Map());
   if (await Service.exists({ teamId, nameNormalized: name.toLowerCase(), lifecycle: 'active' })) throw nameConflict();
   // Paid plans need the billing flow; it is unavailable until billing is configured and validated.
@@ -172,6 +188,7 @@ export async function prepareService(teamId: string, input: CreateServiceInput):
     nodeVersion,
     startCommand,
     port,
+    publishDir,
     repo,
     branch,
     repoNormalized,
@@ -228,6 +245,7 @@ export async function finalizeService(p: PreparedService, actor: Actor, billing?
           nodeVersion: p.nodeVersion,
           startCommand: p.startCommand,
           port: p.port,
+          publishDir: p.publishDir,
           autoDeploy: p.autoDeploy,
           autoRestart: p.autoRestart,
           status: 'deploying',
@@ -296,7 +314,7 @@ export async function createService(tenant: Tenant, actor: Actor, input: CreateS
 }
 
 const LEGACY_IGNORED = ['ramLimitMb', 'storageLimitMb'] as const;
-export const SETTINGS_FIELDS = ['name', 'startCommand', 'nodeVersion', 'port', 'branch', 'autoDeploy', 'autoRestart'] as const;
+export const SETTINGS_FIELDS = ['name', 'startCommand', 'nodeVersion', 'port', 'publishDir', 'branch', 'autoDeploy', 'autoRestart'] as const;
 
 /** `PATCH /services/:id`: settings only. Changes apply on the next deployment. */
 export async function updateService(tenant: Tenant, actor: Actor, id: string, patch: UpdateServiceInput & Record<string, unknown>) {
@@ -315,14 +333,24 @@ export async function updateService(tenant: Tenant, actor: Actor, id: string, pa
     set.nameNormalized = name.toLowerCase();
   }
   if (patch.startCommand !== undefined && patch.startCommand !== svc.startCommand) {
+    if (svc.type === 'static') throw validation(STATIC_FIXED, 'startCommand');
     set.startCommand = checkStartCommand(patch.startCommand);
     settingsChanged = true;
+  }
+  if (patch.publishDir !== undefined) {
+    if (svc.type !== 'static') throw validation('The publish directory only applies to static sites.', 'publishDir');
+    const dir = checkPublishDir(patch.publishDir);
+    if (dir !== (svc.publishDir ?? null)) {
+      set.publishDir = dir;
+      settingsChanged = true;
+    }
   }
   if (patch.nodeVersion !== undefined && patch.nodeVersion !== svc.nodeVersion) {
     set.nodeVersion = checkNodeVersion(patch.nodeVersion, svc.source);
     settingsChanged = svc.source !== 'docker';
   }
   if (patch.port !== undefined && patch.port !== svc.port) {
+    if (svc.type === 'static') throw validation(STATIC_FIXED, 'port');
     set.port = checkPort(svc.type, patch.port);
     settingsChanged = true;
   }

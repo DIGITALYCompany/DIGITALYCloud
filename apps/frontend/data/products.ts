@@ -88,10 +88,10 @@ const WORKER_PLANS: ProductPlan[] = [
 ];
 
 const WEB_PLANS: ProductPlan[] = [
-  { name: 'Static', price: 0, specs: ['1 static site', 'Free HTTPS', '1 GB bandwidth/day', 'digitaly.app subdomain'] },
-  { name: 'Site', price: 1.49, specs: ['3 sites', 'Custom domain', 'Unmetered bandwidth', 'Daily backups'] },
-  { name: 'Site Pro', price: 3.99, specs: ['10 sites', 'Server-rendered apps', '1 GB RAM', 'Preview deployments'], popular: true },
-  { name: 'Agency', price: 9.99, specs: ['Unlimited sites', '2 GB RAM', 'Team access', 'Priority support'] },
+  { name: 'Static', price: 0, specs: ['1 static site', 'Free HTTPS', 'digitaly.app subdomain', 'Git or archive deploys'] },
+  { name: 'Site', price: 1.49, specs: ['3 sites', 'Custom domains', 'Free HTTPS', 'Automatic restarts'] },
+  { name: 'Site Pro', price: 3.99, specs: ['10 sites', 'Custom domains', '1 GB RAM', 'Automatic restarts'], popular: true },
+  { name: 'Agency', price: 9.99, specs: ['Unlimited sites', 'Custom domains', '2 GB RAM', 'Priority support'] },
 ];
 
 export const PRODUCTS: Product[] = [
@@ -322,15 +322,14 @@ cron.schedule('*/5 * * * *', async () => {
   },
   {
     slug: 'websites',
-    deployable: false,
-    badge: 'Coming soon',
+    deployable: true,
     name: 'Website Hosting',
     short: 'Sites and portfolios from France',
     icon: Globe,
     category: 'Web',
     accent: accent,
     headline: ['Websites,', 'fast from France.'],
-    description: 'Host landing pages, portfolios, documentation and dashboards with free HTTPS, custom domains and instant cache purges.',
+    description: 'Host landing pages, portfolios, documentation and dashboards with free HTTPS and custom domains.',
     stats: [
       { value: '< 30 s', label: 'Deploy time' },
       { value: 'Free', label: 'SSL certificates' },
@@ -339,8 +338,8 @@ cron.schedule('*/5 * * * *', async () => {
     stack: ['Vite', 'Astro', 'Next.js export', 'Hugo', 'Eleventy', 'Plain HTML'],
     highlights: [
       { icon: Globe, title: 'Custom domains', body: 'Point your domain and we handle DNS checks and certificates.' },
-      { icon: Zap, title: 'Fast by default', body: 'Compressed, cached assets served from NVMe in the region closest to your visitors.' },
-      { icon: GitBranch, title: 'Preview deploys', body: 'Every branch gets its own preview URL on Pro and above.' },
+      { icon: Zap, title: 'Fast by default', body: 'Compressed, cache-friendly assets served from the region you choose.' },
+      { icon: GitBranch, title: 'Git deploys', body: 'Push to your branch and the site rebuilds and goes live automatically.' },
       { icon: Lock, title: 'Free HTTPS', body: 'Certificates issued and renewed automatically.' },
       { icon: RefreshCw, title: 'Instant rollbacks', body: 'Go back to any previous version in one click.' },
       { icon: ShieldCheck, title: 'GDPR friendly', body: 'No third-party trackers, EU hosting by default.' },
@@ -358,7 +357,7 @@ $ git push origin main
     faq: [
       ['Can I host a static site for free?', 'Yes. Static sites run on the Static plan with a digitaly.app subdomain.'],
       ['Do you support server-side rendering?', 'Yes. Deploy it as a Node.js service and we route traffic to it.'],
-      ['How do custom domains work?', 'Add your domain, create the DNS record we show you, and HTTPS is ready within minutes.'],
+      ['How do custom domains work?', 'On paid plans, add your domain, create the two DNS records we show you, and HTTPS is ready within minutes.'],
     ],
     docs: 'getting-started',
   },

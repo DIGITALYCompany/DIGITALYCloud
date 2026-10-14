@@ -5,6 +5,7 @@ import type {
   BillingOperationStatus,
   BillingStatus,
   ContactTopic,
+  CustomDomainStatus,
   DeployStage,
   DeployTrigger,
   DeploymentStatus,
@@ -209,11 +210,15 @@ export interface ServiceDto {
   region: string;
   regionId: string;
   server: string;
-  runtime: 'Docker' | 'Node.js';
+  runtime: 'Docker' | 'Node.js' | 'Static';
   nodeVersion: NodeVersion;
   startCommand: string;
   port: number | null;
+  /** Static sites: published folder, or null to detect it (dist, build, out, public, _site, root). */
+  publishDir: string | null;
   url: string | null;
+  /** Verified custom domains that receive traffic. */
+  domains: string[];
   plan: PlanId;
   source: SourceType;
   repo: string;
@@ -239,6 +244,8 @@ export interface CreateServiceInput {
   nodeVersion: NodeVersion;
   startCommand: string;
   port: number | null;
+  /** Static sites only (start command and port are fixed for them). */
+  publishDir?: string | null;
   plan: PlanId;
   regionId: string;
   env: EnvVarInput[];
@@ -251,9 +258,34 @@ export interface UpdateServiceInput {
   startCommand?: string;
   nodeVersion?: NodeVersion;
   port?: number | null;
+  publishDir?: string | null;
   branch?: string;
   autoDeploy?: boolean;
   autoRestart?: boolean;
+}
+
+/** A DNS record the user creates at their DNS provider; `ok` is the result of the last check. */
+export interface DnsRecordDto {
+  purpose: 'ownership' | 'routing';
+  type: 'TXT' | 'CNAME' | 'A' | 'ALIAS';
+  name: string;
+  value: string;
+  ok: boolean | null;
+}
+
+export interface CustomDomainDto {
+  id: string;
+  serviceId: string;
+  hostname: string;
+  status: CustomDomainStatus;
+  /** Root domain (`example.com`): routed with A/ALIAS records instead of a CNAME. */
+  apex: boolean;
+  records: DnsRecordDto[];
+  /** What the last check found, in words. */
+  message: string | null;
+  createdAt: number;
+  verifiedAt: number | null;
+  checkedAt: number | null;
 }
 
 export interface ServiceDeploymentPair {

@@ -1,4 +1,4 @@
-import { Bot, Code2, Cpu, Server as ServerIcon, type LucideIcon } from 'lucide-react';
+import { Bot, Code2, Cpu, Globe, Server as ServerIcon, type LucideIcon } from 'lucide-react';
 import { getServicePlan } from '@digitalycloud/shared';
 import type { Service, ServiceType } from './types';
 
@@ -12,4 +12,5 @@ export const SERVICE_TYPES: Record<ServiceType, { label: string; icon: LucideIco
   node: { label: 'Node.js', icon: Code2, description: 'Run any Node.js application with your own start command.', color: 'text-success-400 bg-success-500/10 ring-success-500/20' },
   api: { label: 'API', icon: ServerIcon, description: 'Expose an HTTP API with a public URL and health checks.', color: 'text-aqua-400 bg-aqua-500/10 ring-aqua-500/20' },
   worker: { label: 'Worker', icon: Cpu, description: 'Background jobs, schedulers and queue consumers.', color: 'text-azure-400 bg-azure-500/10 ring-azure-500/20' },
+  static: { label: 'Static Site', icon: Globe, description: 'Portfolios and sites in HTML/CSS/JS, or built with Vite, Astro and co.', color: 'text-warning-400 bg-warning-500/10 ring-warning-500/20' },
 };

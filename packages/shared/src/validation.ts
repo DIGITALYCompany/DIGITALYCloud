@@ -25,6 +25,12 @@ export const MESSAGES = {
   upload: 'Upload a .zip of your project.',
   startCommand: 'A start command is required.',
   port: 'Port must be between 1 and 65535.',
+  publishDir: 'Use a folder inside your project, like dist or build (letters, numbers, . _ - and /).',
+  domain: 'Enter a domain like example.com or www.example.com.',
+  domainTaken: 'This domain is already connected to a service.',
+  domainPlan: 'Custom domains are available on paid plans.',
+  domainNoHttp: 'Custom domains need a service that serves HTTP (a port or a static site).',
+  domainLimit: 'A service can have at most 5 custom domains.',
   portRequired: 'Web services need a port.',
   unknownRegion: 'Unknown region.',
   envKey: 'Keys must use uppercase letters, numbers and underscores.',
@@ -96,3 +102,33 @@ export function parseDockerImage(ref: string) {
 export function isValidPort(n: unknown): n is number {
   return typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= 65535;
 }
+
+/**
+ * Publish directory of a static site, relative to the project root. Empty, `.` and `./` mean
+ * "detect" (null). Returns `false` when the value is not a safe relative folder.
+ */
+export function normalizePublishDir(raw: string | null | undefined): string | null | false {
+  const v = (raw ?? '').trim().replace(/^\.\/+/, '').replace(/\/+$/, '');
+  if (v === '' || v === '.') return null;
+  if (v.length > 200 || !/^[\w.-]+(\/[\w.-]+)*$/.test(v)) return false;
+  if (v.split('/').some((seg) => seg === '.' || seg === '..')) return false;
+  return v;
+}
+
+/**
+ * A custom domain as users type it (`https://www.Example.com/` works): lowercased, without scheme,
+ * path or trailing dot. `toAscii` converts internationalised names to punycode (the backend passes
+ * `node:url`'s `domainToASCII`). Returns null when it is not a valid hostname.
+ */
+export function normalizeHostname(raw: string, toAscii: (host: string) => string = (h) => h): string | null {
+  let v = raw.trim().toLowerCase().replace(/^[a-z]+:\/\//, '').split(/[/?#]/)[0]!.replace(/\.$/, '');
+  if (!v || /[\s@:]/.test(v)) return null;
+  v = toAscii(v);
+  if (!v || v.length > 253 || /^[\d.]+$/.test(v)) return null;
+  const labels = v.split('.');
+  if (labels.length < 2 || !/^(xn--[a-z0-9-]+|[a-z]{2,63})$/.test(labels[labels.length - 1]!)) return null;
+  return labels.every((l) => /^(?!-)[a-z0-9-]{1,63}(?<!-)$/.test(l)) ? v : null;
+}
+
+/** `example.com` (no CNAME possible at the zone apex) vs `www.example.com`. Two-label heuristic. */
+export const isApexDomain = (hostname: string) => hostname.split('.').length === 2;

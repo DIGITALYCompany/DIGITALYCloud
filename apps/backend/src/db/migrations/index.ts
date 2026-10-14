@@ -28,6 +28,12 @@ export const MIGRATIONS: Migration[] = [
       await db.collection('counters').updateOne({ _id: 'support_ticket' as never }, { $setOnInsert: { seq: 1000 } }, { upsert: true });
     },
   },
+  {
+    version: '0003',
+    name: 'custom-domains',
+    // Creates the custom_domains collection and its indexes (and anything else declared since 0001).
+    up: async ({ log }) => ensureCollectionsAndIndexes(log),
+  },
 ];
 
 const checksum = (m: Migration) => createHash('sha256').update(`${m.version}:${m.name}:${m.up.toString()}`).digest('hex').slice(0, 16);

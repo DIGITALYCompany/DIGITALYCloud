@@ -4,6 +4,7 @@ import { registerRuntimeProcessors } from '../runtime/processors';
 import { registerPlatformProcessors } from '../modules/platform/platform.routes';
 import { registerAccountProcessors } from '../modules/account/deletion.worker';
 import { registerBillingProcessors } from '../modules/billing/billing.service';
+import { registerDomainProcessors } from '../modules/domains/domains.service';
 
 /** Registers every job processor. Each domain module owns its processors. */
 export function registerAllProcessors() {
@@ -13,4 +14,5 @@ export function registerAllProcessors() {
   registerPlatformProcessors();
   registerAccountProcessors();
   registerBillingProcessors();
+  registerDomainProcessors();
 }

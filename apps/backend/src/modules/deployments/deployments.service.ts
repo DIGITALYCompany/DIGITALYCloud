@@ -87,7 +87,7 @@ export async function createDeploymentRecord(session: ClientSession, svc: Servic
     },
     config: input.rollbackOf
       ? { ...input.rollbackOf.config }
-      : { startCommand: svc.startCommand, nodeVersion: svc.nodeVersion, port: svc.port, settingsVersion: svc.settingsVersion },
+      : { startCommand: svc.startCommand, nodeVersion: svc.nodeVersion, port: svc.port, publishDir: svc.type === 'static' ? (svc.publishDir ?? null) : null, settingsVersion: svc.settingsVersion },
     imageRef: input.rollbackOf?.imageRef ?? null,
     imageDigest: input.rollbackOf?.imageDigest ?? null,
     rollbackOf: input.rollbackOf?._id ?? null,

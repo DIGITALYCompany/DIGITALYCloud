@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Box, Check, FileArchive, GitBranch, Github, Info, Loader2, Lock, Plus, RefreshCw, Trash2, UploadCloud, XCircle } from 'lucide-react';
-import { SERVICE_DEFAULTS, UPLOAD_LIMITS, type CatalogResponse, type GithubConnectionDto } from '@digitalycloud/shared';
+import { PUBLISH_DIR_CANDIDATES, SERVICE_DEFAULTS, UPLOAD_LIMITS, type CatalogResponse, type GithubConnectionDto } from '@digitalycloud/shared';
 import { Button } from '@/components/ui/button';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { DEFAULT_REGION, TIER_COVERAGE, getRegion, isRegionAllowed } from '@/data/regions';
@@ -27,6 +27,8 @@ export interface WizardState {
   nodeVersion: string;
   startCommand: string;
   port: string;
+  /** Static sites: folder to publish (empty = detect). */
+  publishDir: string;
   region: string;
   env: EnvVar[];
   plan: PlanId;
@@ -85,6 +87,7 @@ const TYPE_ORDER: { id: ServiceType; title: string }[] = [
   { id: 'node', title: 'Node.js Application' },
   { id: 'api', title: 'API' },
   { id: 'worker', title: 'Worker' },
+  { id: 'static', title: 'Static Website' },
 ];
 
 export function StepType({ s, patch }: { s: WizardState; patch: Patch }) {
@@ -96,7 +99,15 @@ export function StepType({ s, patch }: { s: WizardState; patch: Patch }) {
           <OptionCard
             key={t.id}
             selected={s.type === t.id}
-            onClick={() => patch({ type: t.id, port: SERVICE_DEFAULTS[t.id].port ? String(SERVICE_DEFAULTS[t.id].port) : '', startCommand: SERVICE_DEFAULTS[t.id].startCommand })}
+            onClick={() =>
+              patch({
+                type: t.id,
+                port: SERVICE_DEFAULTS[t.id].port ? String(SERVICE_DEFAULTS[t.id].port) : '',
+                startCommand: SERVICE_DEFAULTS[t.id].startCommand,
+                // Static sites are built from code: a Docker image source does not apply.
+                ...(t.id === 'static' && s.source === 'docker' ? { source: null } : {}),
+              })
+            }
             icon={<T.icon />}
             title={t.title}
             description={T.description}
@@ -294,7 +305,14 @@ export function StepSource({ s, patch, connection, onConnectGithub, onRetryGithu
       <div className="grid gap-3 sm:grid-cols-3">
         <OptionCard selected={s.source === 'github'} onClick={() => patch({ source: 'github' })} icon={<Github />} title="GitHub" description="Deploy from a repository. Auto-deploy on every push." />
         <OptionCard selected={s.source === 'upload'} onClick={() => patch({ source: 'upload' })} icon={<UploadCloud />} title="Upload files" description="Upload a .zip or .tar.gz of your project folder." />
-        <OptionCard selected={s.source === 'docker'} onClick={() => patch({ source: 'docker' })} icon={<Box />} title="Docker Image" description="Run any public image from a registry." />
+        <OptionCard
+          selected={s.source === 'docker'}
+          onClick={() => patch({ source: 'docker' })}
+          icon={<Box />}
+          title="Docker Image"
+          description={s.type === 'static' ? 'Not available for static sites.' : 'Run any public image from a registry.'}
+          disabled={s.type === 'static'}
+        />
       </div>
 
       {s.source === 'github' && (
@@ -327,8 +345,55 @@ function FieldError({ message }: { message?: string }) {
   return message ? <p className="mt-1.5 text-xs text-danger-400">{message}</p> : null;
 }
 
+/** Static sites: no start command, port or runtime variables, only the folder to publish. */
+function StaticConfigure({ s, patch, errors }: { s: WizardState; patch: Patch; errors: Record<string, string> }) {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <div className="sm:col-span-2">
+        <label className="label" htmlFor="wizard-name">
+          Site name
+        </label>
+        <input id="wizard-name" className={cn('input', errors.name && 'border-danger-500/60')} placeholder="my-portfolio" value={s.name} onChange={(e) => patch({ name: e.target.value })} autoFocus />
+        <FieldError message={errors.name} />
+      </div>
+      <div>
+        <label className="label" htmlFor="wizard-publish">
+          Publish directory <span className="text-ink-500">(optional)</span>
+        </label>
+        <input
+          id="wizard-publish"
+          className={cn('input font-mono', errors.publishDir && 'border-danger-500/60')}
+          placeholder="Detect automatically"
+          value={s.publishDir}
+          onChange={(e) => patch({ publishDir: e.target.value })}
+        />
+        <FieldError message={errors.publishDir} />
+      </div>
+      <div>
+        <label className="label" htmlFor="wizard-node">
+          Node.js version <span className="text-ink-500">(for the build)</span>
+        </label>
+        <select id="wizard-node" className="input" value={s.nodeVersion} onChange={(e) => patch({ nodeVersion: e.target.value })}>
+          {NODE_VERSIONS.map((v) => (
+            <option key={v}>{v}</option>
+          ))}
+        </select>
+        <FieldError message={errors.nodeVersion} />
+      </div>
+      <p className="flex items-start gap-2 rounded-xl border border-white/[0.08] px-3.5 py-2.5 text-sm text-ink-300 sm:col-span-2">
+        <Info className="mt-0.5 h-4 w-4 shrink-0" />
+        <span>
+          Plain HTML works as is. With a <code className="font-mono text-ink-100">package.json</code>, we install dependencies and run its <code className="font-mono text-ink-100">build</code> script first. Leave the
+          directory empty to publish the first of {PUBLISH_DIR_CANDIDATES.join(', ')} that has an index.html, or the project root.
+        </span>
+      </p>
+    </div>
+  );
+}
+
 export function StepConfigure({ s, patch, errors }: { s: WizardState; patch: Patch; errors: Record<string, string> }) {
   const setEnv = (id: string, p: Partial<EnvVar>) => patch({ env: s.env.map((e) => (e.id === id ? { ...e, ...p } : e)) });
+  if (s.type === 'static') return <StaticConfigure s={s} patch={patch} errors={errors} />;
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2">

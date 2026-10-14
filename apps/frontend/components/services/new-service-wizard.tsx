@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ArrowRight, Check, Lock, Rocket } from 'lucide-react';
-import { DEFAULT_NODE_VERSION, ENV_KEY_RE, GITHUB_REPO_RE, MESSAGES, RESERVED_ENV_PREFIX, SERVICE_NAME_RE, isSupportedNodeVersion, type CreateServiceInput, type NodeVersion } from '@digitalycloud/shared';
+import { DEFAULT_NODE_VERSION, ENV_KEY_RE, GITHUB_REPO_RE, MESSAGES, RESERVED_ENV_PREFIX, SERVICE_NAME_RE, isSupportedNodeVersion, normalizePublishDir, type CreateServiceInput, type NodeVersion } from '@digitalycloud/shared';
 import { CheckoutReturn, useCheckoutReturn } from '@/components/billing/checkout-return';
 import { Button, ButtonLink } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -40,6 +40,7 @@ const INITIAL: WizardState = {
   nodeVersion: DEFAULT_NODE_VERSION,
   startCommand: 'node index.js',
   port: '',
+  publishDir: '',
   region: DEFAULT_REGION.id,
   env: [{ id: 'init-1', key: 'NODE_ENV', value: 'production', secret: false }],
   plan: 'free',
@@ -78,7 +79,7 @@ const GITHUB_RESULT: Record<string, { kind: 'success' | 'error' | 'warning'; tit
 };
 
 /** Which wizard step owns a field the server rejected. */
-const FIELD_STEP: Record<string, number> = { type: 0, source: 1, repo: 1, branch: 1, uploadId: 1, github: 1, name: 2, startCommand: 2, nodeVersion: 2, port: 2, env: 2, plan: 3, regionId: 3 };
+const FIELD_STEP: Record<string, number> = { type: 0, source: 1, repo: 1, branch: 1, uploadId: 1, github: 1, name: 2, startCommand: 2, nodeVersion: 2, port: 2, publishDir: 2, env: 2, plan: 3, regionId: 3 };
 
 function validate(step: number, s: WizardState, existing: string[]) {
   const e: Record<string, string> = {};
@@ -93,6 +94,11 @@ function validate(step: number, s: WizardState, existing: string[]) {
   if (step === 2) {
     if (!SERVICE_NAME_RE.test(s.name.trim())) e.name = MESSAGES.serviceName;
     else if (existing.includes(s.name.trim().toLowerCase())) e.name = MESSAGES.serviceNameTaken;
+    // Static sites have a fixed start command and port, and no runtime variables.
+    if (s.type === 'static') {
+      if (normalizePublishDir(s.publishDir) === false) e.publishDir = MESSAGES.publishDir;
+      return e;
+    }
     if (!s.startCommand.trim()) e.startCommand = MESSAGES.startCommand;
     if (s.port && (+s.port < 1 || +s.port > 65535)) e.port = MESSAGES.port;
     if ((s.type === 'api' || s.type === 'node') && !s.port) e.port = MESSAGES.portRequired;
@@ -112,6 +118,7 @@ function sourceSummary(s: WizardState) {
 }
 
 function toInput(s: WizardState): CreateServiceInput {
+  const isStatic = s.type === 'static';
   return {
     name: s.name.trim(),
     type: s.type!,
@@ -122,9 +129,10 @@ function toInput(s: WizardState): CreateServiceInput {
     nodeVersion: (isSupportedNodeVersion(s.nodeVersion) ? s.nodeVersion : DEFAULT_NODE_VERSION) as NodeVersion,
     startCommand: s.startCommand.trim(),
     port: s.port ? +s.port : null,
+    ...(isStatic ? { publishDir: normalizePublishDir(s.publishDir) || null } : {}),
     plan: s.plan,
     regionId: s.region,
-    env: s.env.filter((v) => v.key).map(({ key, value, secret }) => ({ key, value, secret })),
+    env: isStatic ? [] : s.env.filter((v) => v.key).map(({ key, value, secret }) => ({ key, value, secret })),
   };
 }
 
@@ -286,11 +294,18 @@ export function NewServiceWizard() {
                 ['Service', s.name],
                 ['Type', SERVICE_TYPES[s.type].label],
                 ['Source', sourceSummary(s)],
-                ['Runtime', s.source === 'docker' ? 'Docker' : `Node.js ${s.nodeVersion}`],
-                ['Start command', s.startCommand],
-                ['Port', s.port || 'None (background process)'],
+                ...(s.type === 'static'
+                  ? [
+                      ['Build', `Node.js ${s.nodeVersion} · build script if present`],
+                      ['Publish directory', normalizePublishDir(s.publishDir) || 'Detect automatically'],
+                    ]
+                  : [
+                      ['Runtime', s.source === 'docker' ? 'Docker' : `Node.js ${s.nodeVersion}`],
+                      ['Start command', s.startCommand],
+                      ['Port', s.port || 'None (background process)'],
+                    ]),
                 ['Region', `${regionLabel(region)} · ${region.code}`],
-                ['Environment', `${s.env.filter((v) => v.key).length} variable(s)`],
+                ...(s.type === 'static' ? [] : [['Environment', `${s.env.filter((v) => v.key).length} variable(s)`]]),
                 ['Plan', `${plan.name} · ${formatMb(plan.ramMb)} RAM · ${plan.vcpu} vCPU · ${plan.storageGb} GB`],
               ].map(([k, v]) => (
                 <div key={k} className="flex flex-col gap-1 px-5 py-3.5 sm:flex-row sm:items-center">

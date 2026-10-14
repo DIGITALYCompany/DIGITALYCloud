@@ -57,6 +57,12 @@ export const PLANS: Record<ServiceType, Plan[]> = {
     plan('pro', 'Worker Pro', 599, 1536, 1, 15, ['10 workers', '1.5 GB RAM', '1 vCPU', 'Failure alerts'], true),
     plan('business', 'Worker Max', 1299, 4096, 2, 30, ['Unlimited workers', '4 GB RAM', '2 vCPU', 'Priority support']),
   ],
+  static: [
+    plan('free', 'Static', 0, 128, 0.25, 1, ['1 static site', 'Free HTTPS', 'digitaly.app subdomain', 'Git or archive deploys']),
+    plan('starter', 'Site', 149, 256, 0.25, 2, ['3 sites', 'Custom domains', 'Free HTTPS', 'Automatic restarts']),
+    plan('pro', 'Site Pro', 399, 1024, 0.5, 5, ['10 sites', 'Custom domains', '1 GB RAM', 'Automatic restarts'], true),
+    plan('business', 'Agency', 999, 2048, 1, 10, ['Unlimited sites', 'Custom domains', '2 GB RAM', 'Priority support']),
+  ],
 };
 
 export const planLevel = (id: PlanId) => PLAN_LEVELS.indexOf(id);
@@ -144,14 +150,29 @@ export const isSupportedNodeVersion = (v: string): v is SupportedNodeVersion => 
 /** Major version number, e.g. `'24 LTS'` → `24`. */
 export const nodeMajor = (v: NodeVersion) => Number.parseInt(v, 10);
 
+/**
+ * Static sites are served by a file server the platform adds to the image: the start command and
+ * port are fixed, users only choose which folder is published.
+ */
+export const STATIC_START_COMMAND = 'node /opt/digitaly/serve.mjs';
+export const STATIC_PORT = 8080;
+/** Folders checked, in order, when a static site leaves the publish directory empty. */
+export const PUBLISH_DIR_CANDIDATES = ['dist', 'build', 'out', 'public', '_site'] as const;
+
 export const SERVICE_DEFAULTS: Record<ServiceType, { startCommand: string; port: number | null }> = {
   discord: { startCommand: 'node index.js', port: null },
   node: { startCommand: 'npm run start', port: 3000 },
   api: { startCommand: 'npm run start', port: 3000 },
   worker: { startCommand: 'node worker.js', port: null },
+  static: { startCommand: STATIC_START_COMMAND, port: STATIC_PORT },
 };
-/** Node and API services serve HTTP and must declare a port. */
+/** Node and API services serve HTTP and must declare a port (static sites get a fixed one). */
 export const typeRequiresPort = (t: ServiceType) => t === 'node' || t === 'api';
+export const isStaticType = (t: ServiceType) => t === 'static';
+
+/** Custom domains are a paid feature, for services that serve HTTP. */
+export const planAllowsCustomDomains = (id: PlanId) => id !== 'free';
+export const MAX_CUSTOM_DOMAINS = 5;
 
 // ---------------------------------------------------------------------------------------------
 // Limits
