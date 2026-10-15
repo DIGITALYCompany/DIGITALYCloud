@@ -6,7 +6,13 @@
 ARG NODE_IMAGE=node:24-bookworm-slim
 
 FROM ${NODE_IMAGE} AS deps
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential python3 ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /repo
+# mongodb-/redis-memory-server (dev-only, for `npm run dev:infra`) download MongoDB and compile Redis
+# on install; the slim image has no `make`, and the image never uses them.
+ENV MONGOMS_DISABLE_POSTINSTALL=1 REDISMS_DISABLE_POSTINSTALL=1
 # Every workspace manifest is copied so `npm ci` can verify the single root lockfile.
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
