@@ -216,6 +216,8 @@ export interface ServiceDto {
   port: number | null;
   /** Static sites: published folder, or null to detect it (dist, build, out, public, _site, root). */
   publishDir: string | null;
+  /** Chosen address label (paid plans); `url` falls back to `{id}` while the plan doesn't include it. */
+  subdomain: string | null;
   url: string | null;
   /** Verified custom domains that receive traffic. */
   domains: string[];
@@ -259,6 +261,8 @@ export interface UpdateServiceInput {
   nodeVersion?: NodeVersion;
   port?: number | null;
   publishDir?: string | null;
+  /** Address label on the platform domain (paid plans); null or empty resets to the service id. */
+  subdomain?: string | null;
   branch?: string;
   autoDeploy?: boolean;
   autoRestart?: boolean;

@@ -58,8 +58,8 @@ export const PLANS: Record<ServiceType, Plan[]> = {
     plan('business', 'Worker Max', 1299, 4096, 2, 30, ['Unlimited workers', '4 GB RAM', '2 vCPU', 'Priority support']),
   ],
   static: [
-    plan('free', 'Static', 0, 128, 0.25, 1, ['1 static site', 'Free HTTPS', 'digitaly.app subdomain', 'Git or archive deploys']),
-    plan('starter', 'Site', 149, 256, 0.25, 2, ['3 sites', 'Custom domains', 'Free HTTPS', 'Automatic restarts']),
+    plan('free', 'Static', 0, 128, 0.25, 1, ['1 static site', 'Free HTTPS', 'digitalycloud.com address', 'Git or archive deploys']),
+    plan('starter', 'Site', 149, 256, 0.25, 2, ['3 sites', 'Choose your address', 'Custom domains', 'Automatic restarts']),
     plan('pro', 'Site Pro', 399, 1024, 0.5, 5, ['10 sites', 'Custom domains', '1 GB RAM', 'Automatic restarts'], true),
     plan('business', 'Agency', 999, 2048, 1, 10, ['Unlimited sites', 'Custom domains', '2 GB RAM', 'Priority support']),
   ],
@@ -172,6 +172,8 @@ export const isStaticType = (t: ServiceType) => t === 'static';
 
 /** Custom domains are a paid feature, for services that serve HTTP. */
 export const planAllowsCustomDomains = (id: PlanId) => id !== 'free';
+/** Choosing the address on the platform domain (`mehdi.digitalycloud.com`) is a paid feature too. */
+export const planAllowsCustomSubdomain = (id: PlanId) => id !== 'free';
 export const MAX_CUSTOM_DOMAINS = 5;
 
 // ---------------------------------------------------------------------------------------------

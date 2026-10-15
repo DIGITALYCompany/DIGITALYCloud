@@ -99,7 +99,7 @@ const schema = z.object({
   UPLOAD_TMP_DIR: z.string().default(''),
 
   RUNTIME_DRIVER: z.enum(['docker', 'disabled']).default('disabled'),
-  PUBLIC_RUNTIME_DOMAIN: z.string().default('digitaly.app'),
+  PUBLIC_RUNTIME_DOMAIN: z.string().default('digitalycloud.com'),
   PUBLIC_RUNTIME_SCHEME: z.enum(['https', 'http']).default('https'),
   PUBLIC_RUNTIME_PORT: optional,
   /** Public IPs of the proxy edge, comma-separated: shown as A records for root custom domains. */

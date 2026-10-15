@@ -68,6 +68,8 @@ export interface ServiceDoc {
   port: number | null;
   /** Static sites: folder to publish, null = detect. Absent on documents created before static sites. */
   publishDir?: string | null;
+  /** Chosen address label on the runtime domain (held in slug_reservations like ids). Absent on older documents. */
+  subdomain?: string | null;
   autoDeploy: boolean;
   autoRestart: boolean;
   status: ServiceStatus;
@@ -132,6 +134,7 @@ const serviceSchema = new Schema(
     startCommand: { type: String, required: true, maxlength: 1000 },
     port: { type: Number, default: null, min: 1, max: 65535 },
     publishDir: { type: String, default: null, maxlength: 200 },
+    subdomain: { type: String, default: null, maxlength: 40 },
     autoDeploy: { type: Boolean, required: true },
     autoRestart: { type: Boolean, required: true },
     status: { type: String, enum: SERVICE_STATUSES, required: true },

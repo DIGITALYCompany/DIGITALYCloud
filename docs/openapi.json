@@ -613,6 +613,17 @@
               }
             ]
           },
+          "subdomain": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "Chosen address label on the platform domain (paid plans); `url` uses the id while the plan does not include it."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "url": {
             "anyOf": [
               {
@@ -732,6 +743,7 @@
           "startCommand",
           "port",
           "publishDir",
+          "subdomain",
           "url",
           "domains",
           "plan",
@@ -890,6 +902,17 @@
             "anyOf": [
               {
                 "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "subdomain": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "Paid plans; empty or null resets to the id. Applies immediately."
               },
               {
                 "type": "null"

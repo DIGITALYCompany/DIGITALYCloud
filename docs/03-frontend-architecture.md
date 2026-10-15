@@ -97,6 +97,6 @@ These are product/marketing content, not user data. They don't need an API unles
 - **Timestamps** are numbers: epoch **milliseconds** (`Date.now()`), for example `createdAt`, `startedAt`, `time`, `ts`. `Invoice.date` is an ISO date string `YYYY-MM-DD`.
 - **Field names** are camelCase and match the shared DTOs (`lib/types.ts` aliases them), so no mapping is needed.
 - **Money** is a number in euros (e.g. `6.99`), displayed with `formatEuro`.
-- **Service ids are slugs** (`syncbot`, `communityapi`), used in URLs (`/services/syncbot`) and public hostnames (`syncbot.digitaly.app`).
+- **Service ids are slugs** (`syncbot`, `communityapi`), used in URLs (`/services/syncbot`) and public hostnames (`syncbot.digitalycloud.com`).
 - **Typed routes** are on: every `<Link href>` is checked at build time, and `lib/routes.ts` `AppHref` types links stored in data.
 - **Styling**: Tailwind v4 tokens in `app/globals.css`. lucide-react is pinned to `0.446.0` on purpose.

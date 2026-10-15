@@ -51,7 +51,7 @@ Never return `passwordHash`, TOTP secrets or OAuth tokens.
 
 | Field              | Type             | Owner  | Notes                                                                                                   |
 | ------------------ | ---------------- | ------ | ------------------------------------------------------------------------------------------------------- |
-| ✅ `id`            | string           | server | **Public slug**, globally unique and immutable. Created as `slugify(name)`; on collision append `-` + 4 random chars. Used in `/services/:id` and `https://{id}.digitaly.app`. |
+| ✅ `id`            | string           | server | **Public slug**, globally unique and immutable. Created as `slugify(name)`; on collision append `-` + 4 random chars. Used in `/services/:id` and `https://{id}.digitalycloud.com`. |
 | ✅ `name`          | string           | client | `^[A-Za-z][\w-]{1,31}$` (2–32 chars, starts with a letter). Unique per team, case-insensitive. Renaming does **not** change `id`. |
 | ✅ `type`          | ServiceType      | client | Set at creation, immutable                                                                              |
 | ✅ `status`        | ServiceStatus    | server | See state machine below                                                                                 |
@@ -75,7 +75,7 @@ Never return `passwordHash`, TOTP secrets or OAuth tokens.
 | ✅ `branch`        | string           | client | GitHub only. The mock uses `'—'` for other sources. **Proposed:** API returns `null`, and the frontend adapter maps it to `'—'`. |
 | ✅ `env`           | EnvVar[]         | client | Embedded for session (dashboard) requests. Omitted for API-key requests.                                       |
 | ➕ `regionId`      | string           | server | `lyon`, `paris`, … (store this, derive `region` label from it)                                          |
-| ➕ `url`           | string \| null   | server | `https://{id}.digitaly.app` when `port` is set, else `null`                                             |
+| ➕ `url`           | string \| null   | server | `https://{id}.digitalycloud.com` when `port` is set, else `null`                                             |
 | ➕ `autoDeploy`    | boolean          | client | Deploy on every push to `branch` (GitHub only). Default `true`.                                         |
 | ➕ `autoRestart`   | boolean          | client | Restart on crash. **Paid plans only** (force `false` on `free`).                                        |
 

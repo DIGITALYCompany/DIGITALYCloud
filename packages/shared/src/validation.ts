@@ -31,6 +31,9 @@ export const MESSAGES = {
   domainPlan: 'Custom domains are available on paid plans.',
   domainNoHttp: 'Custom domains need a service that serves HTTP (a port or a static site).',
   domainLimit: 'A service can have at most 5 custom domains.',
+  subdomain: 'Use 3–40 lowercase letters, numbers or dashes, not starting or ending with a dash.',
+  subdomainTaken: 'This address is already taken. Try another one.',
+  subdomainPlan: 'Choosing your address is available on paid plans.',
   portRequired: 'Web services need a port.',
   unknownRegion: 'Unknown region.',
   envKey: 'Keys must use uppercase letters, numbers and underscores.',
@@ -132,3 +135,13 @@ export function normalizeHostname(raw: string, toAscii: (host: string) => string
 
 /** `example.com` (no CNAME possible at the zone apex) vs `www.example.com`. Two-label heuristic. */
 export const isApexDomain = (hostname: string) => hostname.split('.').length === 2;
+
+/**
+ * Address label on the platform domain (`mehdi` in `mehdi.digitalycloud.com`). Empty means
+ * "back to the default" (null); `false` when it is not a valid label.
+ */
+export function normalizeSubdomain(raw: string | null | undefined): string | null | false {
+  const v = (raw ?? '').trim().toLowerCase();
+  if (v === '') return null;
+  return /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/.test(v) && !v.startsWith('xn--') ? v : false;
+}

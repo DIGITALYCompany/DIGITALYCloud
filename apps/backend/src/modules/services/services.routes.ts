@@ -57,6 +57,7 @@ const updateSchema = z.looseObject({
   nodeVersion: z.string().max(16).optional(),
   port: port.optional(),
   publishDir: z.string().max(200).nullable().optional(),
+  subdomain: z.string().max(63).nullable().optional(),
   branch: z.string().max(255).optional(),
   autoDeploy: z.boolean().optional(),
   autoRestart: z.boolean().optional(),

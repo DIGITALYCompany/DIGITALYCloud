@@ -88,8 +88,8 @@ const WORKER_PLANS: ProductPlan[] = [
 ];
 
 const WEB_PLANS: ProductPlan[] = [
-  { name: 'Static', price: 0, specs: ['1 static site', 'Free HTTPS', 'digitaly.app subdomain', 'Git or archive deploys'] },
-  { name: 'Site', price: 1.49, specs: ['3 sites', 'Custom domains', 'Free HTTPS', 'Automatic restarts'] },
+  { name: 'Static', price: 0, specs: ['1 static site', 'Free HTTPS', 'digitalycloud.com address', 'Git or archive deploys'] },
+  { name: 'Site', price: 1.49, specs: ['3 sites', 'Choose your address', 'Custom domains', 'Automatic restarts'] },
   { name: 'Site Pro', price: 3.99, specs: ['10 sites', 'Custom domains', '1 GB RAM', 'Automatic restarts'], popular: true },
   { name: 'Agency', price: 9.99, specs: ['Unlimited sites', 'Custom domains', '2 GB RAM', 'Priority support'] },
 ];
@@ -351,11 +351,11 @@ cron.schedule('*/5 * * * *', async () => {
 ✓ built in 2.1s
 $ git push origin main
 → DIGITALYCloud: deploying portfolio...
-✓ Live at https://portfolio.digitaly.app`,
+✓ Live at https://portfolio.digitalycloud.com`,
     },
     plans: WEB_PLANS,
     faq: [
-      ['Can I host a static site for free?', 'Yes. Static sites run on the Static plan with a digitaly.app subdomain.'],
+      ['Can I host a static site for free?', 'Yes. Static sites run on the Static plan at your-site.digitalycloud.com. Paid plans can choose the address and add custom domains.'],
       ['Do you support server-side rendering?', 'Yes. Deploy it as a Node.js service and we route traffic to it.'],
       ['How do custom domains work?', 'On paid plans, add your domain, create the two DNS records we show you, and HTTPS is ready within minutes.'],
     ],
