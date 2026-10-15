@@ -25,3 +25,6 @@ npm-debug.log*
 .vercel/
 # Local data (development storage, Docker-free MongoDB/Redis)
 .data/
+
+# CI release archives
+release-artifacts/
