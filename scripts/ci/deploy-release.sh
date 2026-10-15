@@ -54,9 +54,9 @@ healthy() {
     if systemctl is-active --quiet digitalycloud-api.service &&
        systemctl is-active --quiet digitalycloud-web.service &&
        systemctl is-active --quiet digitalycloud-worker.service &&
-       curl -fsS --max-time 5 \
+       curl --noproxy '*' -fsS --connect-timeout 3 --max-time 15 \
          http://127.0.0.1:4000/v1/health/ready >/dev/null; then
-      code="$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' \
+      code="$(curl --noproxy '*' -sS --connect-timeout 3 --max-time 15 -o /dev/null -w '%{http_code}' \
         http://127.0.0.1:3000/ || true)"
       if [ "$code" = 200 ]; then
         return 0
